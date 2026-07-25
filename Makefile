@@ -46,6 +46,9 @@ load:             ## Load the latest raw snapshot into core.*: make load SOURCE=
 build-grid:       ## Build+publish the hex analysis grid from core.municipal_boundary
 	cd jobs && uv run python -m retailscout_jobs.cli build-grid
 
+build-features:   ## Compute business/competition features into analytics.location_feature
+	cd jobs && uv run python -m retailscout_jobs.cli build-features
+
 # --- Frontend -------------------------------------------------------------
 
 fe-dev:

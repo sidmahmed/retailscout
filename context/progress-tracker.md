@@ -4,30 +4,27 @@ Update this file after every meaningful implementation change.
 
 ## Current Phase
 
-- Phase 1 (data foundation) core loading is COMPLETE, and the Phase
-  1→2 bridge (the hex analysis grid) is DONE. Provenance tracking
-  (`0002`), the `core` schema (`0003`), all six core loaders
-  (`municipal_boundary`, `pedestrian_sensor_locations`,
-  `pedestrian_hourly`, `business_establishments`,
-  `development_activity`, `ptv_gtfs`→`transport_stop`), and now the
-  `analytics` release machinery + hex grid (`0004`) are live, verified
-  against real data, and cross-checked against each other. Every
-  `core.*` table is populated from real, checksummed,
-  provenance-tracked snapshots, and `analytics.analysis_cell` holds a
-  real 2,317-cell grid published atomically as `data_release`. Ready
-  to move into Phase 2 (feature/scoring engine) proper.
+- Phase 2 (feature/scoring engine) is UNDERWAY. Phase 1 (data
+  foundation) and the Phase 1→2 bridge (hex grid, `0004`) are complete.
+  The first `location_feature` slice — business/competition features
+  (`0005`) — is now live: `analytics.location_feature` exists and its
+  business columns are computed for all 2,317 grid cells against real
+  data. Remaining Phase 2 work: the other feature families (pedestrian
+  demand, worker demand, development, transport, confidence), then the
+  scoring engine (`location_score`) and golden-location evaluation.
 
 ## Current Goal
 
-- Start Phase 2 feature-building against the grid: the first
-  `location_feature` computation (architecture.md §§10-14 — pedestrian
-  daypart aggregates, business-mix summaries, catchments), plus the
-  `0005` migration that adds `analytics.location_feature` /
-  `analytics.location_score` referencing the `data_release` the grid
-  already establishes. That migration is deliberately NOT written yet —
-  its table shapes depend on the scoring methodology, and per the
-  established practice (profile/design before DDL) it comes WITH its
-  first loader, not ahead of it.
+- Next feature family. Candidates (each its own unit, profile-first):
+  (a) transport-access features (tram/train/bus stops within catchment
+  from `core.transport_stop` — simplest, no new config); (b)
+  worker-demand features (CLUE jobs-by-block — needs the
+  employment-by-block source, not yet loaded to core); (c) pedestrian
+  demand (the highest-value but most complex: sensor daypart baselines
+  from the 1.6M `core.pedestrian_observation` rows, then distance-decay
+  interpolation to cells + a separate confidence value, §10). Pick per
+  value vs. complexity; pedestrian demand is the product's core signal
+  but is a multi-step unit.
 
 ## Completed
 
@@ -279,6 +276,39 @@ Update this file after every meaningful implementation change.
   dev DB now holds two grid releases (#1 superseded, #2 active) from
   the manual verification runs — expected release-history state, not
   cruft to clean.
+- Migration `0005` + first Phase 2 feature loader:
+  business/competition features (2026-07-25). Created
+  `analytics.location_feature` (per-cell feature vector, scoped to the
+  business columns this loader fills — see db/README for the deviations
+  from the doc's sketch) and
+  `jobs/retailscout_jobs/features/business_features.py`, wired via
+  `cli.py build-features` / `make build-features`. Profiled the real
+  ANZSIC4 data FIRST and it changed the design in two concrete ways:
+  (1) the current business snapshot is the LATEST `census_year` (2024,
+  19,672 rows), NOT the full 413k all-years stack — counting all years
+  would multiply-count a tenancy; (2) ANZSIC4 `4511` is a COMBINED
+  "Cafes and Restaurants" group, so the doc's separate
+  cafes/restaurants columns are impossible — the column is
+  `cafe_restaurant_400m`. Also excludes `0000 Vacant Space` (5,335
+  rows — not a business). Introduced the versioned industry taxonomy
+  (`jobs/registry/industry_taxonomy.yaml` + typed
+  `retailscout_jobs/taxonomy.py`, invariant 8): ANZSIC4→category mapping
+  resolved in Python, SQL only joins a plain code→category mapping —
+  never hard-coded in SQL. Verified against live PostGIS: Bourke St
+  Mall CBD cell = 348 café/restaurants, 200 takeaway, 69 bars, 728
+  retail, 641 complementary within 400m; `cafe_restaurant_400m` matched
+  an independent direct spatial query exactly. Every cell gets a real
+  count (0 where none in range, never NULL — invariant 4). Catchment is
+  a geodesic `ST_DWithin` on geography (labelled approximate; §9.2's
+  pedestrian-network distance deferred). Hit and fixed a real perf
+  issue found by measuring, not guessing: the geography cast bypassed
+  the geometry GiST index (22s); added an index-accelerated
+  `&&`/`ST_Expand` bbox pre-filter before the exact geography check →
+  3.6s, identical counts. First `features/` loader to touch `core.*` +
+  `analytics.*` together. 11 new tests (6 pure taxonomy-resolver + 5 DB
+  integration using a fictional `census_year=2099` sentinel to isolate
+  from the real 413k rows without deleting them; 56 total in jobs/, up
+  from 45).
 
 ### Data validation findings
 
@@ -384,12 +414,26 @@ Each item is one unit of work (ai-workflow-rules.md). In order:
 2. ~~Generate the analysis hex grid~~ **DONE 2026-07-25** — migration
    0004 + `features/grid.py`, H3 res 10, 2,317 real cells published as
    an atomic `analytics.data_release` (see Completed).
-3. Start Phase 2 feature-building against the grid (catchments,
-   pedestrian daypart aggregates, business-mix summaries) per
-   architecture.md §§10-14 — the first real consumer of everything
-   loaded in this phase. First unit: migration `0005`
-   (`analytics.location_feature`/`location_score`) + the first
-   feature loader, designed together against real data.
+3. ~~Start Phase 2 feature-building~~ **STARTED 2026-07-25** — migration
+   0005 `analytics.location_feature` + `features/business_features.py`
+   (business/competition columns, all 2,317 cells) + the versioned
+   industry taxonomy (see Completed).
+4. Next feature family (each its own profile-first unit):
+   - Transport-access features (tram/train/bus stops within catchment
+     from `core.transport_stop`) — simplest, `ALTER TABLE ADD COLUMN`
+     on `location_feature` + a `transport_features` loader, no new
+     config. Good "second feature" to cement the ADD-COLUMN-per-family
+     pattern.
+   - Worker-demand features (CLUE jobs-by-block) — blocked on loading
+     the employment-by-block source into `core` first (not yet a core
+     loader; the source is ingested to raw but has no core table).
+   - Pedestrian demand (§10) — highest value, biggest unit: sensor
+     daypart baselines from the 1.6M `core.pedestrian_observation`
+     rows, then distance-decay interpolation to cells + a separate
+     foot-traffic confidence value. Likely split across ≥2 units.
+5. Scoring engine: `analytics.location_score` + versioned weighted
+   scoring (§15) once enough feature families exist, then
+   golden-location evaluation.
 
 ## Definition of Done for any unit (copy of ai-workflow-rules.md gate)
 

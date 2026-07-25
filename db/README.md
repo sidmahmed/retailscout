@@ -201,9 +201,48 @@ and multi-schema layouts do not autogenerate well). Run with
    geometry; ALL clipping is PostGIS (`ST_Intersects`), so
    shapely/geopandas are still not needed. See
    `jobs/tests/test_features_grid.py` (8 tests).
-5. `0005` — `analytics` feature/score tables: `location_feature`
-   (PK `(cell_id, feature_version)`), `location_score`
-   (PK `(cell_id, business_profile, score_version)`), referencing the
-   `data_release` from 0004. Created with their Phase 2 loaders.
-6. `0006` — `app` schema: `project`, `saved_location`.
-7. `0007` — `audit` schema: `score_request`, `data_quality_result`.
+5. `0005` ✔ `analytics.location_feature` — the per-cell feature vector
+   the scorer reads (invariant 5: no request-time spatial joins).
+   **Deviates deliberately** from database-architecture.md's sketch,
+   driven by real data:
+   - Keyed `(release_id, cell_id, feature_version)` with an FK to
+     `analysis_cell(release_id, cell_id)`, not the doc's
+     `(cell_id, feature_version)` — a release owns its grid AND its
+     features, so a release stays a self-contained atomically-swappable
+     bundle (ADR-004). `feature_version` is retained as the
+     product-facing version axis.
+   - Business columns match REAL ANZSIC4 granularity: ANZSIC4 4511 is
+     the COMBINED "Cafes and Restaurants" group (source cannot split
+     café from restaurant — profiled, not assumed), so the column is
+     `cafe_restaurant_400m`, not the doc's speculative separate
+     cafes/restaurants.
+   - **Scoped to the business/competition columns only** — the slice
+     the first feature loader computes. Pedestrian/worker/development/
+     transport/confidence columns are added by later migrations WITH
+     their loaders (same "don't model a column before its loader"
+     discipline as 0003); `location_feature` grows by
+     `ALTER TABLE ADD COLUMN` per feature family.
+   All feature columns nullable: NULL = "not computed for this
+   generation", distinct from 0 = a real observed count (invariant 4).
+   First feature loader: `jobs/retailscout_jobs/features/
+   business_features.py` (`build_business_features`), via `cli.py
+   build-features` / `make build-features`. Counts establishments per
+   RetailScout taxonomy category within a 400 m geodesic catchment of
+   each cell centroid (§9.3), using only the latest `census_year`
+   snapshot (19,672 current rows, not the 413k all-years stack) and the
+   versioned taxonomy (`jobs/registry/industry_taxonomy.yaml` — invariant
+   8, resolved in Python, SQL only joins a plain code→category mapping).
+   Verified against live PostGIS: the Bourke St Mall CBD cell shows 348
+   café/restaurants, 200 takeaway, 69 bars, 728 retail, 641
+   complementary within 400 m, and `cafe_restaurant_400m` matches an
+   independent direct spatial query exactly. Uses an index-accelerated
+   `&&`/`ST_Expand` bbox pre-filter before the exact geography
+   `ST_DWithin` (22 s → 3.6 s on the full grid). 11 new tests (6 pure
+   taxonomy-resolver + 5 DB integration; 56 total in jobs/, up from 45).
+6. `0006` — remaining `analytics.location_feature` columns as their
+   feature families land (pedestrian demand, worker demand, development,
+   transport) + `analytics.location_score`
+   (PK `(cell_id, business_profile, score_version)`), created with the
+   scoring engine.
+7. `0007` — `app` schema: `project`, `saved_location`.
+8. `0008` — `audit` schema: `score_request`, `data_quality_result`.

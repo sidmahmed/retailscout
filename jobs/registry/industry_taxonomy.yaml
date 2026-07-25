@@ -1,0 +1,60 @@
+# RetailScout industry taxonomy — maps ANZSIC 2006 4-digit groups (as
+# they appear in core.business_establishment.industry_anzsic4_code) into
+# the user-facing categories the scoring engine reasons about. Versioned
+# config, NOT hard-coded in SQL or application code (architecture.md
+# invariant 8 / §11.1), so another municipality or a taxonomy revision
+# never requires a code change.
+#
+# Resolution order for a business's ANZSIC4 code:
+#   1. if it is in `exclude_codes`            -> excluded (counted nowhere)
+#   2. else the first category whose `codes`  contains the exact code
+#   3. else the first category whose `prefixes` matches its leading digits
+#   4. else 'other'                            -> counted nowhere (yet)
+# Exact-code matches beat prefix matches globally, so a specific code can
+# override a broad division prefix.
+#
+# IMPORTANT real-data fact (profiled against the 2024 snapshot, 19,672
+# current establishments): ANZSIC4 4511 is "Cafes AND Restaurants" as a
+# SINGLE combined group — the source cannot distinguish a café from a
+# restaurant. The feature columns are named accordingly
+# (cafe_restaurant_400m), not the doc's speculative separate
+# cafes/restaurants split. "0000 Vacant Space" (5,335 rows) is excluded:
+# it is a vacant tenancy, not a business.
+
+version: v1
+
+# Straight-line (geodesic) catchment radius for business counts. §9.2
+# prefers pedestrian-network distance; we start with a geodesic buffer
+# and label it approximate (no maintained pedestrian network yet). The
+# radius is baked into the location_feature column names (_400m), so
+# changing it is a schema change, not just a config edit.
+catchment_metres: 400
+
+exclude_codes:
+  - "0000" # Vacant Space — not a business
+
+# Order matters (see resolution order above).
+categories:
+  - name: cafe_restaurant # direct café competitor pool
+    codes: ["4511"] # Cafes and Restaurants (combined in ANZSIC)
+  - name: takeaway_food # direct café competitor pool
+    codes: ["4512"] # Takeaway Food Services
+  - name: bar_pub # partial competitor / evening hospitality cluster
+    codes: ["4520"] # Pubs, Taverns and Bars
+  - name: retail # store-based retail — cross-shopping / destination pull
+    prefixes: ["41", "42"] # 41 Food retailing, 42 Other store-based retailing
+  - name: complementary # non-food demand generators (workers, students, visitors, patients)
+    codes: ["4400"] # Accommodation
+    prefixes:
+      - "62" # Finance
+      - "66" # Rental, Hiring and Real Estate Services
+      - "67" # Property Operators / Real Estate
+      - "69" # Professional, Scientific and Technical Services
+      - "70" # Computer System Design and Related Services
+      - "72" # Administrative Services
+      - "75" # Public Administration (government offices)
+      - "80" # Preschool and School Education
+      - "81" # Tertiary Education
+      - "82" # Adult, Community and Other Education
+      - "84" # Hospitals
+      - "85" # Medical and Other Health Care Services

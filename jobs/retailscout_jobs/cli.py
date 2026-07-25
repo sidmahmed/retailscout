@@ -235,6 +235,25 @@ def cmd_build_grid(resolution: int, notes: str | None, activate: bool) -> int:
     return 0
 
 
+def cmd_build_features(feature_version: str) -> int:
+    from .db import get_engine
+    from .features.business_features import build_business_features
+
+    engine = get_engine()
+    try:
+        with engine.begin() as conn:
+            result = build_business_features(conn, feature_version=feature_version)
+    finally:
+        engine.dispose()
+
+    print(
+        f"Built business features for release#{result.release_id} "
+        f"(feature_version={result.feature_version}, census_year={result.census_year}, "
+        f"{result.catchment_metres}m): {result.cells_written} cells"
+    )
+    return 0
+
+
 def cmd_freshness(source_id: str) -> int:
     registry = load_registry()
     source = registry.get(source_id)
@@ -296,6 +315,13 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Build the release but do NOT flip active_release to it",
     )
+    p_feat = sub.add_parser(
+        "build-features",
+        help="Compute business/competition features into analytics.location_feature",
+    )
+    p_feat.add_argument(
+        "--feature-version", default="v1", help="feature_version tag for the rows (default: v1)"
+    )
     p_fresh = sub.add_parser("freshness", help="Probe upstream freshness for one source")
     p_fresh.add_argument("source_id")
 
@@ -310,6 +336,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_load(args.source_id)
     if args.command == "build-grid":
         return cmd_build_grid(args.resolution, args.notes, not args.no_activate)
+    if args.command == "build-features":
+        return cmd_build_features(args.feature_version)
     if args.command == "freshness":
         return cmd_freshness(args.source_id)
     return 1
