@@ -16,7 +16,8 @@ the patterns to copy, and what remains — in priority order. Read
 | Map | `frontend/components/map/SuitabilityMap.tsx` | MapLibre + OpenFreeMap positron (key-free); MVT source `suitability`, props `cell_id`, `total_score`, `confidence_score`; profile switch swaps tile URL via `setTiles()` without rebuilding the map |
 | Profile switcher | `frontend/components/map/ProfileSwitcher.tsx` | driven by `/api/v1/business-profiles` (DB-driven — new profiles appear automatically) |
 | Legend | `frontend/components/map/MapLegend.tsx` | same tokens as the tile ramp |
-| Score drawer | `frontend/components/scoring/ScoreDrawer.tsx` | §18.3 FIXED evidence order — never reorder; null component score renders "Not computed", never 0 (invariant 4) |
+| Score drawer | `frontend/components/scoring/ScoreDrawer.tsx` | §18.3 FIXED evidence order — never reorder; includes the daypart chart; null component score renders "Not computed", never 0 (invariant 4) |
+| Daypart chart | `frontend/components/charts/DaypartChart.tsx` | Weekday/Saturday/Sunday tabs over modelled hourly estimates; sensor confidence remains separate |
 | Score bar / badge | `frontend/components/scoring/{ScoreBar,ConfidenceBadge}.tsx` | score palette and confidence palette are separate systems — never substitute |
 | Shell | `frontend/app/{layout,providers,page}.tsx` | Inter via next/font; QueryClientProvider; map is `dynamic(..., {ssr:false})` |
 
@@ -40,45 +41,40 @@ Bourke St Mall café score 77.2/high).
 
 ## Remaining work, in order
 
-### 1. Daypart foot-traffic chart (needs a small API addition first)
-Backend: the per-daypart estimates already exist in
-`analytics.location_feature` (`pedestrian_est_<daypart>_<day_type>`
-metrics, see migration 0011 / `jobs/.../pedestrian_features.py`). Add
-them to the score `explanation` OR a
-`GET /api/v1/locations/{cell_id}/dayparts` endpoint (follow the
-repository→service→router pattern in `backend/app/repositories/scores.py`
-et al., then `make contracts` to regenerate types). Frontend: a small
-bar chart in `components/charts/DaypartChart.tsx`, slotted into
-ScoreDrawer between "What drives this score" and "Evidence" (the §18.3
-slot is marked with a comment). No chart lib needed — plain divs like
-ScoreBar, tabular-nums labels.
+### Completed: daypart foot-traffic chart
+`ScoreResponse.daypart_foot_traffic` now exposes the matching
+`analytics.cell_pedestrian_daypart` baseline through the existing
+repository→service→schema path. The drawer renders a dependency-free
+bar chart in the §18.3 slot with day-type tabs, confidence dots, and the
+raw sensor-count/nearest-sensor evidence. A null series explicitly says
+that the estimate is unavailable; it is never shown as zero.
 
-### 2. Comparison tray (§18.1)
+### 1. Comparison tray (§18.1)
 Stage 2+ selected locations (lift selection state in `app/page.tsx` to a
 list), bottom-docked tray on desktop, side-by-side component columns
 with raw metrics next to percentiles (ui-context.md forbids bare ranked
 lists). React Query cache already holds each fetched score — reuse via
 the same `["score", profile, lat, lon]` keys.
 
-### 3. Search / geocoding
+### 2. Search / geocoding
 Top-docked search box. Free option: Nominatim
 (`https://nominatim.openstreetmap.org/search?format=jsonp&viewbox=...`)
 restricted to the coverage bounds from `useCoverage()`; debounce ≥1 s to
 respect their usage policy, or swap in any paid geocoder. On result:
 `setSelected({lat, lon})` — everything downstream already works.
 
-### 4. Mobile bottom sheet
+### 3. Mobile bottom sheet
 `ScoreDrawer` is already a self-contained panel; on `< sm` render it in
 a bottom-sheet container (e.g. 60dvh, drag handle) instead of the right
 overlay in `app/page.tsx`. Keep the §18.3 order identical.
 
-### 5. Confidence map overlay (§18.2)
+### 4. Confidence map overlay (§18.2)
 A toggle that recolors the fill layer by `confidence_score` using the
 `--confidence-*` tokens (the tile already carries the property — no
 backend change). Implement as a second paint expression swapped with
 `map.setPaintProperty`.
 
-### 6. Raw point layers on zoom (§18.2)
+### 5. Raw point layers on zoom (§18.2)
 Sensors / individual businesses / developments as point layers visible
 only at high zoom. Needs new tile or GeoJSON endpoints — follow the MVT
 pattern in `backend/app/repositories/scores.py::get_suitability_tile`.

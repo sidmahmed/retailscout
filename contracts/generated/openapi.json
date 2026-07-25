@@ -358,6 +358,72 @@
         ],
         "title": "Coverage"
       },
+      "DaypartEstimate": {
+        "properties": {
+          "day_type": {
+            "type": "string",
+            "title": "Day Type",
+            "description": "e.g. weekday, saturday, sunday"
+          },
+          "daypart": {
+            "type": "string",
+            "title": "Daypart",
+            "description": "e.g. morning, lunch, afternoon, evening"
+          },
+          "pedestrian_estimate": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Pedestrian Estimate",
+            "description": "Distance-decay estimate of pedestrians per hour; not observed storefront footfall."
+          },
+          "confidence": {
+            "$ref": "#/components/schemas/ConfidenceBand"
+          },
+          "n_sensors": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "N Sensors"
+          },
+          "nearest_sensor_m": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Nearest Sensor M"
+          }
+        },
+        "type": "object",
+        "required": [
+          "day_type",
+          "daypart",
+          "pedestrian_estimate",
+          "confidence",
+          "n_sensors",
+          "nearest_sensor_m"
+        ],
+        "title": "DaypartEstimate",
+        "description": "Modelled pedestrian activity for one local day-type/daypart slot."
+      },
+      "DaypartFootTraffic": {
+        "properties": {
+          "baseline_version": {
+            "type": "string",
+            "title": "Baseline Version"
+          },
+          "estimates": {
+            "items": {
+              "$ref": "#/components/schemas/DaypartEstimate"
+            },
+            "type": "array",
+            "title": "Estimates"
+          }
+        },
+        "type": "object",
+        "required": [
+          "baseline_version",
+          "estimates"
+        ],
+        "title": "DaypartFootTraffic",
+        "description": "Config-driven daypart series used by the score's pedestrian evidence."
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -487,6 +553,17 @@
             "maxItems": 3,
             "title": "Top Risks"
           },
+          "daypart_foot_traffic": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DaypartFootTraffic"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Modelled hourly pedestrian estimates. Null when no sensor is within interpolation range."
+          },
           "score_version": {
             "type": "string",
             "title": "Score Version",
@@ -509,6 +586,7 @@
           "profile",
           "confidence",
           "components",
+          "daypart_foot_traffic",
           "score_version",
           "data_release",
           "generated_at"

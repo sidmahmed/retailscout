@@ -43,6 +43,31 @@ _SCORE_ROW_SQL = text("""
       AND business_profile = :profile AND score_version = :score_version
 """)
 
+_DAYPART_ROWS_SQL = text("""
+    WITH chosen_baseline AS (
+        SELECT baseline_version
+        FROM analytics.cell_pedestrian_daypart
+        WHERE release_id = :release_id
+          AND cell_id = :cell_id
+          AND calculated_at <= :score_calculated_at
+        ORDER BY calculated_at DESC
+        LIMIT 1
+    )
+    SELECT
+        d.day_type,
+        d.daypart,
+        d.baseline_version,
+        d.pedestrian_estimate,
+        d.n_sensors,
+        d.nearest_sensor_m,
+        d.foot_traffic_confidence
+    FROM analytics.cell_pedestrian_daypart d
+    JOIN chosen_baseline b USING (baseline_version)
+    WHERE d.release_id = :release_id
+      AND d.cell_id = :cell_id
+      AND d.pedestrian_estimate IS NOT NULL
+""")
+
 _PROFILES_SQL = text("""
     SELECT DISTINCT business_profile FROM analytics.location_score
     WHERE release_id = :release_id ORDER BY business_profile
@@ -114,6 +139,20 @@ def get_score_row(
         .one_or_none()
     )
     return dict(row) if row else None
+
+
+def get_daypart_rows(
+    session: Session, release_id: int, cell_id: str, score_calculated_at: Any
+) -> list[dict[str, Any]]:
+    rows = session.execute(
+        _DAYPART_ROWS_SQL,
+        {
+            "release_id": release_id,
+            "cell_id": cell_id,
+            "score_calculated_at": score_calculated_at,
+        },
+    ).mappings()
+    return [dict(row) for row in rows]
 
 
 def list_profiles(session: Session, release_id: int) -> list[str]:

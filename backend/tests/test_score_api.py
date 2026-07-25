@@ -56,6 +56,22 @@ def test_score_cbd_point_full_contract():
     assert dev["score"] is not None and 0 <= dev["score"] <= 100
     assert dev["evidence"]["pipeline_projects_800m"] > 0
     assert d["top_drivers"] and len(d["top_drivers"]) <= 3
+    traffic = d["daypart_foot_traffic"]
+    assert traffic is not None
+    assert traffic["baseline_version"]
+    assert {e["day_type"] for e in traffic["estimates"]} == {
+        "weekday",
+        "saturday",
+        "sunday",
+    }
+    assert {e["daypart"] for e in traffic["estimates"]} == {
+        "morning",
+        "lunch",
+        "afternoon",
+        "evening",
+    }
+    assert all(e["pedestrian_estimate"] >= 0 for e in traffic["estimates"])
+    assert all(e["n_sensors"] >= 1 for e in traffic["estimates"])
     assert d["score_version"] and d["data_release"].startswith("melbourne-")
 
 

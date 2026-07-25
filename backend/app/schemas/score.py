@@ -61,6 +61,29 @@ class ComponentScore(BaseModel):
     )
 
 
+class DaypartEstimate(BaseModel):
+    """Modelled pedestrian activity for one local day-type/daypart slot."""
+
+    day_type: str = Field(..., description="e.g. weekday, saturday, sunday")
+    daypart: str = Field(..., description="e.g. morning, lunch, afternoon, evening")
+    pedestrian_estimate: float = Field(
+        ...,
+        ge=0,
+        description="Distance-decay estimate of pedestrians per hour; not observed "
+        "storefront footfall.",
+    )
+    confidence: ConfidenceBand
+    n_sensors: int = Field(..., ge=1)
+    nearest_sensor_m: float = Field(..., ge=0)
+
+
+class DaypartFootTraffic(BaseModel):
+    """Config-driven daypart series used by the score's pedestrian evidence."""
+
+    baseline_version: str
+    estimates: list[DaypartEstimate]
+
+
 class ScoreResponse(BaseModel):
     location: ScoreLocation
     profile: BusinessProfile
@@ -75,6 +98,11 @@ class ScoreResponse(BaseModel):
     components: list[ComponentScore]
     top_drivers: list[str] = Field(default_factory=list, max_length=3)
     top_risks: list[str] = Field(default_factory=list, max_length=3)
+    daypart_foot_traffic: DaypartFootTraffic | None = Field(
+        ...,
+        description="Modelled hourly pedestrian estimates. Null when no sensor is "
+        "within interpolation range.",
+    )
     score_version: str = Field(..., description="e.g. cafe-v1.0.0")
     data_release: str = Field(..., description="e.g. melbourne-2026-07-25")
     generated_at: dt.datetime

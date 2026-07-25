@@ -40,6 +40,15 @@ const componentScoreSchema = z.object({
   evidence: z.record(z.union([z.number(), z.string(), z.null()])).optional(),
 });
 
+const daypartEstimateSchema = z.object({
+  day_type: z.string(),
+  daypart: z.string(),
+  pedestrian_estimate: z.number().nonnegative(),
+  confidence: z.enum(["high", "medium", "low", "insufficient"]),
+  n_sensors: z.number().int().positive(),
+  nearest_sensor_m: z.number().nonnegative(),
+});
+
 const scoreResponseSchema = z.object({
   location: z.object({ lat: z.number(), lon: z.number(), cell_id: z.string() }),
   profile: z.enum(["cafe", "retail_shop", "food_truck", "pop_up"]),
@@ -52,6 +61,12 @@ const scoreResponseSchema = z.object({
   components: z.array(componentScoreSchema),
   top_drivers: z.array(z.string()).optional(),
   top_risks: z.array(z.string()).optional(),
+  daypart_foot_traffic: z
+    .object({
+      baseline_version: z.string(),
+      estimates: z.array(daypartEstimateSchema),
+    })
+    .nullable(),
   score_version: z.string(),
   data_release: z.string(),
   generated_at: z.string(),

@@ -20,6 +20,8 @@ from app.schemas.score import (
     ComponentScore,
     Confidence,
     ConfidenceBand,
+    DaypartEstimate,
+    DaypartFootTraffic,
     ScoreLocation,
     ScoreResponse,
 )
@@ -106,6 +108,25 @@ def get_score(session: Session, lat: float, lon: float, profile: BusinessProfile
     raw_components: list[dict[str, Any]] = explanation.get("components", [])
     raw_conf: dict[str, Any] = explanation.get("confidence", {})
     drivers, risks = _drivers_and_risks(raw_components)
+    raw_dayparts = repo.get_daypart_rows(session, release_id, cell_id, row["calculated_at"])
+    daypart_foot_traffic = (
+        DaypartFootTraffic(
+            baseline_version=str(raw_dayparts[0]["baseline_version"]),
+            estimates=[
+                DaypartEstimate(
+                    day_type=str(d["day_type"]),
+                    daypart=str(d["daypart"]),
+                    pedestrian_estimate=float(d["pedestrian_estimate"]),
+                    confidence=ConfidenceBand(d["foot_traffic_confidence"]),
+                    n_sensors=int(d["n_sensors"]),
+                    nearest_sensor_m=float(d["nearest_sensor_m"]),
+                )
+                for d in raw_dayparts
+            ],
+        )
+        if raw_dayparts
+        else None
+    )
 
     return ScoreResponse(
         location=ScoreLocation(lat=lat, lon=lon, cell_id=cell_id),
@@ -127,6 +148,7 @@ def get_score(session: Session, lat: float, lon: float, profile: BusinessProfile
         ],
         top_drivers=drivers,
         top_risks=risks,
+        daypart_foot_traffic=daypart_foot_traffic,
         score_version=str(row["score_version"]),
         data_release=f"melbourne-{release['release_date']}-r{release_id}",
         generated_at=dt.datetime.now(dt.UTC),

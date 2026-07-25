@@ -7,11 +7,9 @@
  *   2. one-sentence interpretation
  *   3. component score bars
  *   4. top drivers and risks
- *   5. supporting evidence (raw values behind the components)
- *   6. source freshness / limitations
- * The daypart foot-traffic chart and nearby-business breakdown belong
- * between 4 and 5 once their API endpoints exist — see
- * context/frontend-handoff.md.
+ *   5. daypart foot-traffic chart
+ *   6. supporting evidence (raw values behind the components)
+ *   7. source freshness / limitations
  */
 
 import {
@@ -23,6 +21,7 @@ import {
   X,
 } from "lucide-react";
 
+import { DaypartChart } from "@/components/charts/DaypartChart";
 import { OutsideBoundaryError, ServiceUnavailableError } from "@/lib/api/client";
 import { useScore } from "@/lib/api/hooks";
 import type { BusinessProfile, ScoreResponse } from "@/lib/api/types";
@@ -213,7 +212,12 @@ function ScoreContent({ data }: { data: ScoreResponse }) {
         </Section>
       )}
 
-      {/* 5 — raw evidence behind the components */}
+      {/* 5 — daypart foot-traffic chart */}
+      <Section title="Foot traffic by daypart">
+        <DaypartChart traffic={data.daypart_foot_traffic} />
+      </Section>
+
+      {/* 6 — raw evidence behind the components */}
       {evidenced.length > 0 && (
         <Section title="Evidence">
           <dl className="space-y-1.5 text-sm">
@@ -245,7 +249,7 @@ function ScoreContent({ data }: { data: ScoreResponse }) {
         </ul>
       </Section>
 
-      {/* 6 — source freshness / limitations */}
+      {/* 7 — source freshness / limitations */}
       <Section title="Sources">
         <p className="text-xs leading-relaxed text-[var(--text-muted)]">
           Data release <span className="numeric">{data.data_release}</span> · score

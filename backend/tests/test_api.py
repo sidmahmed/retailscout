@@ -37,7 +37,10 @@ def test_openapi_publishes_score_contract():
     assert "ScoreResponse" in schemas
     assert "Confidence" in schemas
     assert "ComponentScore" in schemas
+    assert "DaypartEstimate" in schemas
+    assert "DaypartFootTraffic" in schemas
     # confidence is mandatory — a score without confidence is not a valid response
     assert "confidence" in schemas["ScoreResponse"]["required"]
+    assert "daypart_foot_traffic" in schemas["ScoreResponse"]["required"]
     assert "score_version" in schemas["ScoreResponse"]["required"]
     assert "data_release" in schemas["ScoreResponse"]["required"]

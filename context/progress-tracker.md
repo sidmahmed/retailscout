@@ -4,6 +4,19 @@ Update this file after every meaningful implementation change.
 
 ## Current Phase
 
+- DAYPART FOOT-TRAFFIC CHART IS LIVE (2026-07-25): the score API now
+  includes the config-driven `analytics.cell_pedestrian_daypart` series
+  that matches the score's calculation time (12 slots for the current
+  weekday/Saturday/Sunday × morning/lunch/afternoon/evening baseline).
+  The drawer's fixed §18.3 evidence order now includes a dependency-free
+  bar chart with day-type tabs, modelled `/ hr` labels, separate
+  confidence colors, and raw sensor-count/nearest-distance context.
+  Cells without a usable sensor estimate show an explicit unavailable
+  state, never zero. Pydantic/OpenAPI/generated TypeScript/zod contracts
+  were updated together; all 9 backend tests, frontend typecheck +
+  production build, and the real Bourke St Mall API response are
+  verified.
+
 - DEVELOPMENT COMPONENT IS LIVE (2026-07-25, migration 0013,
   score_version v2): the last always-null score component now scores for
   real. Development Activity Monitor ingested + loaded (1,438 rows, the

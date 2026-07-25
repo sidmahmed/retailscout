@@ -169,6 +169,42 @@ export interface components {
              */
             bounds: number[];
         };
+        /**
+         * DaypartEstimate
+         * @description Modelled pedestrian activity for one local day-type/daypart slot.
+         */
+        DaypartEstimate: {
+            /**
+             * Day Type
+             * @description e.g. weekday, saturday, sunday
+             */
+            day_type: string;
+            /**
+             * Daypart
+             * @description e.g. morning, lunch, afternoon, evening
+             */
+            daypart: string;
+            /**
+             * Pedestrian Estimate
+             * @description Distance-decay estimate of pedestrians per hour; not observed storefront footfall.
+             */
+            pedestrian_estimate: number;
+            confidence: components["schemas"]["ConfidenceBand"];
+            /** N Sensors */
+            n_sensors: number;
+            /** Nearest Sensor M */
+            nearest_sensor_m: number;
+        };
+        /**
+         * DaypartFootTraffic
+         * @description Config-driven daypart series used by the score's pedestrian evidence.
+         */
+        DaypartFootTraffic: {
+            /** Baseline Version */
+            baseline_version: string;
+            /** Estimates */
+            estimates: components["schemas"]["DaypartEstimate"][];
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -215,6 +251,8 @@ export interface components {
             top_drivers?: string[];
             /** Top Risks */
             top_risks?: string[];
+            /** @description Modelled hourly pedestrian estimates. Null when no sensor is within interpolation range. */
+            daypart_foot_traffic: components["schemas"]["DaypartFootTraffic"] | null;
             /**
              * Score Version
              * @description e.g. cafe-v1.0.0
