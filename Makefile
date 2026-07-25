@@ -49,6 +49,9 @@ build-grid:       ## Build+publish the hex analysis grid from core.municipal_bou
 build-features:   ## Compute business/competition features into analytics.location_feature
 	cd jobs && uv run python -m retailscout_jobs.cli build-features
 
+build-ped-baselines: ## Compute per-sensor pedestrian daypart baselines
+	cd jobs && uv run python -m retailscout_jobs.cli build-pedestrian-baselines
+
 # --- Frontend -------------------------------------------------------------
 
 fe-dev:

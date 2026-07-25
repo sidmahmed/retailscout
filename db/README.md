@@ -320,9 +320,34 @@ and multi-schema layouts do not autogenerate well). Run with
    in that catchment correctly excluded. 5 new tests (71 total in jobs/,
    up from 66), incl. fully-contained (fraction 1), partial
    area-weighting (~4× between radii), suppressed→NULL, observed 0→0.
-10. `0010` — remaining `analytics.location_feature` columns (pedestrian
-    demand, development) + `analytics.location_score`
+10. `0010` ✔ `analytics.sensor_daypart_baseline` — per-sensor
+    foot-traffic baselines (§10.1-10.2), step 1 of pedestrian demand.
+    Robust typical hourly counts (median headline + mean + p25/p75) per
+    sensor × day type (weekday/saturday/sunday) × daypart
+    (morning/lunch/afternoon/evening) over the trailing 12 months, plus
+    n_observations / n_days for the confidence step. Loader
+    `jobs/retailscout_jobs/features/pedestrian_baseline.py`
+    (`build_sensor_baselines`), via `cli.py build-pedestrian-baselines`
+    / `make build-ped-baselines`. Dayparts/day-types come from the
+    versioned config (`jobs/registry/pedestrian_config.yaml` + typed
+    `pedestrian_config.py`, invariant 8), resolved in Python and joined
+    into SQL as arrays — never hard-coded. observed_at is UTC; dayparts
+    are derived in LOCAL time (`AT TIME ZONE`), hours in no daypart
+    (10:00, overnight) excluded. Standalone aggregate keyed by
+    `baseline_version` (config version), NOT grid-release-scoped; NO FK
+    to pedestrian_sensor (orphan sensor_ids exist — same precedent as
+    pedestrian_observation). Verified against live PostGIS: 1,224 rows
+    (102 sensors × 3 × 4); 0 percentile-ordering violations; the busiest
+    weekday-lunch sensor is Swanston St (median 3,101/hr — the real
+    busiest CBD corridor), with a realistic weekday-lunch vs.
+    Saturday-afternoon peak and complete coverage (~259 weekdays / ~51
+    weekend days). 7 new tests (78 total in jobs/, up from 71). NEXT
+    (step 2): distance-decay interpolation of these baselines to grid
+    cells + a separate foot-traffic confidence value (§10.3-10.4).
+11. `0011` — remaining `analytics.location_feature` columns (pedestrian
+    demand from interpolating 0010's baselines, development) +
+    `analytics.location_score`
     (PK `(cell_id, business_profile, score_version)`), created with the
     scoring engine.
-11. `0011` — `app` schema: `project`, `saved_location`.
-12. `0012` — `audit` schema: `score_request`, `data_quality_result`.
+12. `0012` — `app` schema: `project`, `saved_location`.
+13. `0013` — `audit` schema: `score_request`, `data_quality_result`.

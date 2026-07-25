@@ -15,17 +15,17 @@ Update this file after every meaningful implementation change.
 
 ## Current Goal
 
-- Worker-demand features are COMPLETE (0007 geometry, 0008 jobs, 0009
-  feature). `location_feature` now carries business, transport, and
-  worker-demand columns for all 2,317 cells. Next family: PEDESTRIAN
-  DEMAND (§10) — the highest-value and biggest unit, likely split:
-  (1) per-sensor daypart baselines from the 1.6M
-  `core.pedestrian_observation` rows (day-type × daypart robust stats),
-  with dayparts in versioned config; (2) distance-decay interpolation
-  of those baselines to cells + a SEPARATE foot-traffic confidence
-  value (§10.3-10.4), which is explicitly NOT to be presented as
-  observed storefront footfall. After pedestrian demand: the scoring
-  engine (`location_score`, §15) + golden-location evaluation.
+- PEDESTRIAN DEMAND (§10), split in two. Step 1 — per-sensor daypart
+  baselines (`analytics.sensor_daypart_baseline`, 0010) — is DONE (see
+  Completed). Step 2 (NEXT): distance-decay INTERPOLATION of those
+  sensor baselines to grid cells + a SEPARATE foot-traffic confidence
+  value (§10.3-10.4) — `ALTER location_feature ADD` pedestrian daypart
+  columns (+ a confidence signal), a `pedestrian_features` loader
+  weighting nearby sensors by exp(-distance/decay), joined into the
+  build-features orchestrator. Must be labelled modelled/approximate,
+  never presented as observed storefront footfall. After pedestrian
+  demand: the scoring engine (`location_score`, §15) +
+  golden-location evaluation.
 
 ## Completed
 
@@ -401,6 +401,31 @@ Update this file after every meaningful implementation change.
   fully-contained block → whole total, partial overlap → area-weighted
   ~4× between radii, suppressed → NULL, observed 0 → 0, no active
   release → raises.
+- Migration `0010` + pedestrian sensor daypart baselines (2026-07-25) —
+  step 1 of pedestrian demand (§10.1-10.2). `analytics.sensor_daypart_
+  baseline` + `features/pedestrian_baseline.py`
+  (`build_sensor_baselines`), via `cli.py build-pedestrian-baselines` /
+  `make build-ped-baselines`. Robust typical hourly counts (median +
+  mean + p25/p75) per sensor × day type (weekday/saturday/sunday) ×
+  daypart (morning/lunch/afternoon/evening) over the trailing 12
+  months, plus n_observations/n_days for the later confidence step.
+  Dayparts/day-types + trailing window live in versioned config
+  (`jobs/registry/pedestrian_config.yaml` + typed `pedestrian_config.py`,
+  invariant 8), resolved in Python and joined into SQL as arrays — never
+  hard-coded. observed_at is UTC; dayparts derived in LOCAL Melbourne
+  time via `AT TIME ZONE`; hours in no daypart (10:00, overnight)
+  excluded. Standalone aggregate keyed by `baseline_version` (config
+  version), NOT grid-release-scoped (sensor baselines don't change when
+  the grid does); NO FK to pedestrian_sensor (orphan sensor_ids exist).
+  Verified against live PostGIS: 1,224 rows (102 sensors × 3 × 4), 0
+  percentile-ordering violations; the busiest weekday-lunch sensor is
+  Swanston St (median 3,101/hr — Melbourne's real busiest pedestrian
+  corridor), with a realistic weekday-lunch (3,101) vs. Saturday-
+  afternoon (4,144) peak and complete coverage (~259 weekdays, ~51
+  weekend days per year). 7 new tests (78 total in jobs/, up from 71),
+  incl. local-time daypart mapping and the deliberate hour-10 gap
+  exclusion, isolated by inserting fixtures at a 2099 date so the
+  trailing window excludes the real 1.6M rows without deleting them.
 
 ### Data validation findings
 
@@ -518,12 +543,15 @@ Each item is one unit of work (ai-workflow-rules.md). In order:
    - ~~(a2) `core.employment_block` jobs~~ **DONE 2026-07-25** (0008).
    - ~~(b) worker-demand feature `jobs_400m`/`jobs_800m`~~ **DONE
      2026-07-25** (0009, area-weighted, suppression-safe).
-6. Pedestrian demand (§10) — highest value, biggest unit: sensor
-   daypart baselines from the 1.6M `core.pedestrian_observation` rows
-   (day-type × daypart robust stats, dayparts in versioned config),
-   then distance-decay interpolation to cells + a separate foot-traffic
-   confidence value (§10.3-10.4). Split across ≥2 units. Never present
-   as observed storefront footfall.
+6. Pedestrian demand (§10), split in two:
+   - ~~(1) per-sensor daypart baselines~~ **DONE 2026-07-25** (0010,
+     `analytics.sensor_daypart_baseline`).
+   - (2) distance-decay interpolation of those baselines to cells +
+     a separate foot-traffic confidence value (§10.3-10.4): `ALTER
+     location_feature ADD` pedestrian daypart columns (+ confidence),
+     a `pedestrian_features` loader weighting nearby sensors by
+     exp(-distance/decay), into the build-features orchestrator. Label
+     modelled/approximate — never observed storefront footfall.
 7. Scoring engine: `analytics.location_score` + versioned weighted
    scoring (§15) once enough feature families exist, then
    golden-location evaluation.

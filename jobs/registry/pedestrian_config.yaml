@@ -1,0 +1,31 @@
+# Pedestrian-activity baseline configuration (architecture.md §10.1:
+# "store raw definitions in configuration so they can change without
+# rewriting data"). Versioned; the baseline_version stamped on every
+# analytics.sensor_daypart_baseline row is this file's `version`.
+
+version: v1
+
+# Sensor observed_at is stored UTC; dayparts and day types are derived in
+# this LOCAL timezone (Melbourne foot traffic follows local wall-clock).
+timezone: Australia/Melbourne
+
+# Baselines summarise the trailing N months of data (§10.2 "trailing 12
+# months"), measured back from the latest observation, so they stay current.
+trailing_months: 12
+
+# Local-time dayparts, half-open [start_hour, end_hour). Café-oriented
+# (§10.1). Hours in NO daypart (e.g. 10:00, and overnight) are not
+# aggregated into any baseline — deliberate, and changeable here.
+dayparts:
+  - { name: morning, start_hour: 6, end_hour: 10 }
+  - { name: lunch, start_hour: 11, end_hour: 14 }
+  - { name: afternoon, start_hour: 14, end_hour: 17 }
+  - { name: evening, start_hour: 17, end_hour: 22 }
+
+# ISO day-of-week (1=Mon .. 7=Sun) -> day type. Public holidays are NOT
+# yet distinguished (no holiday calendar loaded); they fall into their
+# weekday bucket. Documented gap, revisit when a holiday source exists.
+day_types:
+  - { name: weekday, isodows: [1, 2, 3, 4, 5] }
+  - { name: saturday, isodows: [6] }
+  - { name: sunday, isodows: [7] }
