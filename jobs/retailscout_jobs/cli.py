@@ -236,21 +236,28 @@ def cmd_build_grid(resolution: int, notes: str | None, activate: bool) -> int:
 
 
 def cmd_build_features(feature_version: str) -> int:
+    """Orchestrate every implemented feature-family loader into the active
+    release's location_feature rows, in one transaction. Each loader
+    upserts only its own columns, so they compose regardless of order and
+    the whole feature vector for a release is built atomically."""
     from .db import get_engine
     from .features.business_features import build_business_features
+    from .features.transport_features import build_transport_features
 
     engine = get_engine()
     try:
         with engine.begin() as conn:
-            result = build_business_features(conn, feature_version=feature_version)
+            biz = build_business_features(conn, feature_version=feature_version)
+            trn = build_transport_features(conn, feature_version=feature_version)
     finally:
         engine.dispose()
 
     print(
-        f"Built business features for release#{result.release_id} "
-        f"(feature_version={result.feature_version}, census_year={result.census_year}, "
-        f"{result.catchment_metres}m): {result.cells_written} cells"
+        f"Built features for release#{biz.release_id} "
+        f"(feature_version={biz.feature_version}, {biz.cells_written} cells):"
     )
+    print(f"  business    (census_year={biz.census_year}, {biz.catchment_metres}m)")
+    print(f"  transport   (tram/bus {trn.tram_bus_radius_m}m, train {trn.train_radius_m}m)")
     return 0
 
 

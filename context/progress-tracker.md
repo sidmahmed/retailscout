@@ -15,16 +15,13 @@ Update this file after every meaningful implementation change.
 
 ## Current Goal
 
-- Next feature family. Candidates (each its own unit, profile-first):
-  (a) transport-access features (tram/train/bus stops within catchment
-  from `core.transport_stop` — simplest, no new config); (b)
-  worker-demand features (CLUE jobs-by-block — needs the
-  employment-by-block source, not yet loaded to core); (c) pedestrian
-  demand (the highest-value but most complex: sensor daypart baselines
-  from the 1.6M `core.pedestrian_observation` rows, then distance-decay
-  interpolation to cells + a separate confidence value, §10). Pick per
-  value vs. complexity; pedestrian demand is the product's core signal
-  but is a multi-step unit.
+- Worker-demand features (CLUE jobs-by-block), the next family in the
+  agreed order. Two sub-units, profile-first: (a) a core loader +
+  migration for the employment-by-block source (ingested to raw, no
+  core table yet) → `core.employment_block`; (b) worker-demand feature
+  columns (`jobs_400m`/`jobs_800m`) allocating block job totals to
+  cells (§9.3). After that: pedestrian demand (§10, the biggest unit),
+  then the scoring engine.
 
 ## Completed
 
@@ -309,6 +306,33 @@ Update this file after every meaningful implementation change.
   integration using a fictional `census_year=2099` sentinel to isolate
   from the real 413k rows without deleting them; 56 total in jobs/, up
   from 45).
+- Migration `0006` + transport-access features (2026-07-25) — second
+  Phase 2 feature family, and proof of the ALTER-per-family growth
+  pattern promised in 0005. `ALTER TABLE analytics.location_feature ADD
+  COLUMN tram_stops_400m / bus_stops_400m / train_stops_800m`, plus
+  `jobs/retailscout_jobs/features/transport_features.py`. Counts
+  `core.transport_stop` (1,300 GTFS stops) by mode within §9.2 radii:
+  400 m local (tram/bus), 800 m wider (train — draws from further).
+  Columns named `*_stops_*` honestly: these are GTFS platform-level
+  boardable stops, not distinct stations (core.transport_stop dropped
+  station-grouping rows); regional_coach/skybus (3 each, niche) not
+  featured. `cli.py build-features` refactored into an ORCHESTRATOR:
+  runs the business then transport loaders in ONE transaction, each
+  upserting a disjoint column set on the shared
+  `(release_id, cell_id, feature_version)` row, so they compose in any
+  order and the whole feature vector for a release is built atomically.
+  Verified against live PostGIS: Bourke St Mall cell = 19 tram / 5 bus
+  within 400 m, 28 train within 800 m — matching an independent
+  per-mode spatial count exactly, with the business columns preserved
+  through the compose; every cell got a real 0-or-more count (never
+  NULL). 4 new tests (60 total in jobs/, up from 56), which place
+  fixture stops at EXACT geodesic distances from the real cell centroid
+  (`ST_Project`) so the 400-vs-800 m radius split is tested precisely,
+  not approximately. Caught and fixed a real test bug: initially passed
+  the analytics `grid.release_id` as `transport_stop.source_release_id`
+  (different sequences — FK violation); the fixture now threads the
+  `source.dataset_release` id separately from the analytics
+  `data_release` id.
 
 ### Data validation findings
 
@@ -418,20 +442,22 @@ Each item is one unit of work (ai-workflow-rules.md). In order:
    0005 `analytics.location_feature` + `features/business_features.py`
    (business/competition columns, all 2,317 cells) + the versioned
    industry taxonomy (see Completed).
-4. Next feature family (each its own profile-first unit):
-   - Transport-access features (tram/train/bus stops within catchment
-     from `core.transport_stop`) — simplest, `ALTER TABLE ADD COLUMN`
-     on `location_feature` + a `transport_features` loader, no new
-     config. Good "second feature" to cement the ADD-COLUMN-per-family
-     pattern.
-   - Worker-demand features (CLUE jobs-by-block) — blocked on loading
-     the employment-by-block source into `core` first (not yet a core
-     loader; the source is ingested to raw but has no core table).
+4. ~~Transport-access features~~ **DONE 2026-07-25** — migration 0006 +
+   `features/transport_features.py`, build-features now orchestrates
+   business + transport (see Completed).
+5. Next feature family, per the agreed order:
+   - Worker-demand features (CLUE jobs-by-block) — FIRST needs a core
+     loader for the employment-by-block source (ingested to raw but no
+     core table yet), THEN the feature. Two sub-units: (a) core loader
+     + migration for `core.employment_block`; (b) worker-demand
+     feature columns (`jobs_400m`, `jobs_800m`) allocating block job
+     totals to cells (§9.3 "allocate block totals to intersecting
+     cells, or query whole blocks within a walking catchment").
    - Pedestrian demand (§10) — highest value, biggest unit: sensor
      daypart baselines from the 1.6M `core.pedestrian_observation`
      rows, then distance-decay interpolation to cells + a separate
      foot-traffic confidence value. Likely split across ≥2 units.
-5. Scoring engine: `analytics.location_score` + versioned weighted
+6. Scoring engine: `analytics.location_score` + versioned weighted
    scoring (§15) once enough feature families exist, then
    golden-location evaluation.
 

@@ -239,10 +239,29 @@ and multi-schema layouts do not autogenerate well). Run with
    `&&`/`ST_Expand` bbox pre-filter before the exact geography
    `ST_DWithin` (22 s → 3.6 s on the full grid). 11 new tests (6 pure
    taxonomy-resolver + 5 DB integration; 56 total in jobs/, up from 45).
-6. `0006` — remaining `analytics.location_feature` columns as their
-   feature families land (pedestrian demand, worker demand, development,
-   transport) + `analytics.location_score`
+6. `0006` ✔ transport-access columns on `analytics.location_feature`
+   (`tram_stops_400m`, `bus_stops_400m`, `train_stops_800m`) — the
+   promised ALTER-per-feature-family growth (§14.2). Radii per §9.2:
+   400 m local (tram/bus), 800 m wider (train). Loader
+   `jobs/retailscout_jobs/features/transport_features.py`
+   (`build_transport_features`) counts `core.transport_stop` by mode
+   within radius of each cell centroid; same index-accelerated
+   `&&`/`ST_Expand` pre-filter as the business loader. Columns named
+   `*_stops_*` honestly (GTFS platform-level boardable stops, not
+   distinct stations); regional_coach/skybus (3 each) not featured.
+   `cli.py build-features` is now an orchestrator running the business
+   THEN transport loaders in ONE transaction, each upserting a disjoint
+   column set on the shared `(release_id, cell_id, feature_version)`
+   row (order-independent). Verified against live PostGIS: Bourke St
+   Mall cell = 19 tram / 5 bus (400 m), 28 train (800 m), matching an
+   independent per-mode spatial count, with the business columns
+   preserved through the compose. 4 new tests (60 total in jobs/, up
+   from 56), placing fixture stops at exact geodesic distances
+   (`ST_Project`) so the 400-vs-800 m radius split is tested precisely.
+7. `0007` — remaining `analytics.location_feature` columns as their
+   families land (pedestrian demand, worker demand, development) +
+   `analytics.location_score`
    (PK `(cell_id, business_profile, score_version)`), created with the
    scoring engine.
-7. `0007` — `app` schema: `project`, `saved_location`.
-8. `0008` — `audit` schema: `score_request`, `data_quality_result`.
+8. `0008` — `app` schema: `project`, `saved_location`.
+9. `0009` — `audit` schema: `score_request`, `data_quality_result`.
