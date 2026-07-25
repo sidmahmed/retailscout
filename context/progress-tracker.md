@@ -4,6 +4,21 @@ Update this file after every meaningful implementation change.
 
 ## Current Phase
 
+- DEVELOPMENT COMPONENT IS LIVE (2026-07-25, migration 0013,
+  score_version v2): the last always-null score component now scores for
+  real. Development Activity Monitor ingested + loaded (1,438 rows, the
+  Phase-1 loader already existed); `dev_pipeline_people_800m` /
+  `dev_projects_800m` on location_feature = §13 weighted pipeline
+  (people-equivalents × status probability × 800 m linear decay), all
+  factors in `jobs/registry/development_config.yaml`. COMPLETED counts
+  only after the 2024 CLUE census year (older completions are stock,
+  not pipeline). Scoring reweights a NULL dev feature out per §15.5;
+  evidence (`pipeline_people_800m`, `pipeline_projects_800m`) flows to
+  the drawer. Golden ordering unchanged (Bourke St Mall café
+  77.2 → 78.8, development 93.4). 104 jobs tests, make check green.
+  Frontend-handoff item 5's "no backend change" note for the confidence
+  overlay still holds; its daypart item is unaffected.
+
 - FRONTEND CORE IS LIVE (2026-07-25): the Explore surface is the app's
   root page — full-height MapLibre map (OpenFreeMap positron basemap,
   key-free) rendering the suitability MVT hexes, DB-driven profile

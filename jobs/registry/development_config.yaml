@@ -1,0 +1,62 @@
+# Development-pipeline feature configuration (§13). Every factor in the
+# weighted_development_value formula lives here, never in code
+# ("the factors must be configuration, not hidden constants").
+#
+# weighted value per project =
+#   people_equivalents(scale fields) × status_probability × distance_decay
+#
+# All numbers are STARTING HYPOTHESES, deliberately coarse — the goal is
+# a defensible relative ordering of cells, not a demand forecast
+# (architecture: "do not convert pipeline records into guaranteed future
+# population").
+
+version: v1
+
+# Probability that a project at this status actually delivers its scale.
+# Statuses are the exact values in the Development Activity Monitor
+# (verified against the full 2026-07-25 snapshot: APPLIED 45,
+# APPROVED 214, UNDER CONSTRUCTION 58, COMPLETED 1,121). A status in the
+# data but not listed here fails the build loudly — silently dropping an
+# unknown status would corrupt the feature.
+status_probability:
+  APPLIED: 0.3
+  APPROVED: 0.6
+  UNDER CONSTRUCTION: 0.9
+  COMPLETED: 1.0
+
+# COMPLETED projects only count as *uplift* if they finished AFTER the
+# CLUE census year the business/employment features are built from
+# (currently 2024): older completions are already part of the observed
+# stock (their workers are in employment_block, their shops in
+# business_establishment) and counting them again would double-count.
+completed_since_year: 2024
+
+# Project scale → expected people. Coefficients convert the source's
+# heterogeneous scale fields (dwellings, m² of floor space, rooms, beds)
+# into one comparable "people equivalents" number:
+# - persons per dwelling ~1.8 (inner-Melbourne average household size)
+# - office: ~1 worker per 15 m²; retail: ~1 per 30 m² (coarse industry
+#   space-per-worker rules of thumb)
+# - hotel rooms ~1.2 people (occupancy + staff); student/hostel beds 1:1
+# Other floor-space fields (industrial, storage, education, hospital…)
+# are deliberately EXCLUDED in v1: their people-per-m² varies too wildly
+# to fake precision, and they are rarely retail demand drivers.
+people_equivalents:
+  resi_dwellings: 1.8
+  student_beds: 1.0
+  hostel_beds: 1.0
+  hotel_rooms: 1.2
+  office_flr: 0.0667   # 1/15 m² per worker
+  retail_flr: 0.0333   # 1/30 m² per worker
+
+# Catchment + decay: linear falloff from 1.0 at the cell centroid to 0
+# at radius_m — same 800 m "wider catchment" as jobs_800m so the two
+# demand features describe the same neighbourhood.
+distance_decay:
+  radius_m: 800
+
+# Per-profile relevance multipliers (§13 relevance_to_business_profile)
+# are DEFERRED in v1: they would make the feature per-profile (one
+# column per profile on location_feature). All profiles currently read
+# the same pipeline value; profile differentiation happens through the
+# component weight in score_profiles.yaml instead.

@@ -4,12 +4,14 @@
 # golden-location validation before sign-off, and live here (invariant 8),
 # never hard-coded.
 
-version: v1
+# v2: development component went live (dev_pipeline_people_800m feature,
+# migration 0013) — every v1 score treated it as absent/reweighted-out.
+version: v2
 
 # Component weights per business profile, over the five scored components.
 # Each profile's weights sum to 100. A component that is missing for a cell
-# (development everywhere — no feature yet; or foot_traffic where pedestrian
-# data is insufficient) is reweighted OUT of both numerator and denominator
+# (foot_traffic where pedestrian data is insufficient; development if its
+# feature was not built) is reweighted OUT of both numerator and denominator
 # (§15.5 "reweight only when enough evidence remains"), never treated as 0.
 profiles:
   cafe:

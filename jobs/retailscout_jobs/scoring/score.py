@@ -8,16 +8,16 @@ For every grid cell and each business profile:
    - worker_demand: jobs_800m (location_feature)
    - competition:   café-competitor saturation = cafe_restaurant_400m + takeaway_food_400m
    - transport:     transit stops = tram_400 + bus_400 + train_800
-   - development:   none yet (no growth-pipeline feature) → always absent
+   - development:   dev_pipeline_people_800m (status/decay-weighted pipeline)
 2. Normalise each to a robust 0-100 city percentile (§15.2, percent_rank
    over cells that HAVE the metric). competition is inverted
    (100 − saturation percentile: less competition scores higher — a v1
    simplification; the §11.2 cluster-strength nuance is deferred).
 3. Weight per profile (jobs/registry/score_profiles.yaml) and take the
    weighted mean over the PRESENT components only — a missing component
-   (development everywhere; foot_traffic where pedestrian data is
-   insufficient) is reweighted out of numerator AND denominator (§15.5),
-   never treated as 0.
+   (foot_traffic where pedestrian data is insufficient; development if
+   its feature was not built) is reweighted out of numerator AND
+   denominator (§15.5), never treated as 0.
 4. Confidence is scored SEPARATELY (§15.3) from the cell's foot-traffic
    confidence band, and every component + confidence travels with the
    total in an API-shaped `explanation` jsonb (§17.3, invariant 6).
@@ -65,7 +65,9 @@ _BUILD_SQL = text("""
                coalesce(lf.cafe_restaurant_400m, 0) + coalesce(lf.takeaway_food_400m, 0)
                    AS saturation,
                coalesce(lf.tram_stops_400m, 0) + coalesce(lf.bus_stops_400m, 0)
-                   + coalesce(lf.train_stops_800m, 0) AS transit
+                   + coalesce(lf.train_stops_800m, 0) AS transit,
+               lf.dev_pipeline_people_800m AS dev_people,
+               lf.dev_projects_800m AS dev_projects
         FROM analytics.location_feature lf
         LEFT JOIN ped p USING (cell_id)
         WHERE lf.release_id = :release_id AND lf.feature_version = :feature_version
@@ -73,6 +75,10 @@ _BUILD_SQL = text("""
     foot_pct AS (  -- percentile only among cells that have a pedestrian estimate
         SELECT cell_id, 100.0 * percent_rank() OVER (ORDER BY ped_weekday_avg) AS score
         FROM base WHERE ped_weekday_avg IS NOT NULL
+    ),
+    dev_pct AS (  -- percentile only among cells whose dev feature was built
+        SELECT cell_id, 100.0 * percent_rank() OVER (ORDER BY dev_people) AS score
+        FROM base WHERE dev_people IS NOT NULL
     ),
     comp AS (
         SELECT b.*,
@@ -82,8 +88,11 @@ _BUILD_SQL = text("""
                round((100.0 - 100.0 * percent_rank() OVER (ORDER BY b.saturation))::numeric, 1)
                    AS competition,
                round((100.0 * percent_rank() OVER (ORDER BY b.transit))::numeric, 1)
-                   AS transport
-        FROM base b LEFT JOIN foot_pct fp USING (cell_id)
+                   AS transport,
+               round(dp.score::numeric, 1) AS development
+        FROM base b
+        LEFT JOIN foot_pct fp USING (cell_id)
+        LEFT JOIN dev_pct dp USING (cell_id)
     ),
     profiles AS (
         SELECT * FROM unnest(
@@ -98,16 +107,19 @@ _BUILD_SQL = text("""
             CASE c.conf_band
                 WHEN 'high' THEN :c_high WHEN 'medium' THEN :c_med
                 WHEN 'low' THEN :c_low ELSE :c_insuff END AS confidence_score,
-            -- weighted mean over PRESENT components (development always absent;
-            -- foot_traffic absent where no pedestrian estimate)
+            -- weighted mean over PRESENT components (foot_traffic absent where
+            -- no pedestrian estimate; development absent if its feature was
+            -- not built)
             round((
                 coalesce(pr.w_foot * c.foot_traffic, 0)
                 + pr.w_worker * c.worker_demand
                 + pr.w_comp * c.competition
                 + pr.w_transport * c.transport
+                + coalesce(pr.w_dev * c.development, 0)
             ) / nullif(
                 (CASE WHEN c.foot_traffic IS NOT NULL THEN pr.w_foot ELSE 0 END)
                 + pr.w_worker + pr.w_comp + pr.w_transport
+                + (CASE WHEN c.development IS NOT NULL THEN pr.w_dev ELSE 0 END)
             , 0), 1) AS total_score
         FROM comp c CROSS JOIN profiles pr
     )
@@ -118,7 +130,7 @@ _BUILD_SQL = text("""
     SELECT
         :release_id, s.cell_id, s.business_profile, :score_version, :feature_version,
         s.total_score, s.foot_traffic, s.worker_demand, s.competition, s.transport,
-        NULL, s.confidence_score,
+        s.development, s.confidence_score,
         jsonb_build_object(
             'components', jsonb_build_array(
                 jsonb_build_object('key', 'pedestrian_demand', 'score', s.foot_traffic,
@@ -133,9 +145,11 @@ _BUILD_SQL = text("""
                 jsonb_build_object('key', 'transport', 'score', s.transport,
                     'weight', s.w_transport,
                     'evidence', jsonb_build_object('transit_stops', s.transit)),
-                jsonb_build_object('key', 'development', 'score', NULL,
+                jsonb_build_object('key', 'development', 'score', s.development,
                     'weight', s.w_dev,
-                    'evidence', jsonb_build_object('note', 'no growth-pipeline feature yet'))
+                    'evidence', jsonb_build_object(
+                        'pipeline_people_800m', s.dev_people,
+                        'pipeline_projects_800m', s.dev_projects))
             ),
             'confidence', jsonb_build_object(
                 'score', s.confidence_score, 'band', s.conf_band,

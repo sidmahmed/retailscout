@@ -14,9 +14,8 @@ from pydantic import BaseModel, model_validator
 
 SCORE_PROFILES_PATH = Path(__file__).resolve().parent.parent / "registry" / "score_profiles.yaml"
 
-# The five scored components (development is defined but has no feature yet,
-# so it is always reweighted out — kept here so profiles can weight it the
-# moment a growth-pipeline feature lands).
+# The five scored components. All five have live features as of
+# score_version v2 (development landed with migration 0013).
 COMPONENTS = ("foot_traffic", "worker_demand", "competition", "transport", "development")
 CONFIDENCE_BANDS = ("high", "medium", "low", "insufficient")
 

@@ -43,6 +43,8 @@ const EVIDENCE_LABELS: Record<string, string> = {
   jobs_800m: "Jobs within 800 m",
   cafe_competitors_400m: "Similar businesses within 400 m",
   transit_stops: "Transit stops nearby",
+  pipeline_people_800m: "Development pipeline within 800 m (people)",
+  pipeline_projects_800m: "Pipeline projects within 800 m",
 };
 
 function interpretation(data: ScoreResponse): string {

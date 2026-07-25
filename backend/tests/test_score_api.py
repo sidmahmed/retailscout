@@ -50,9 +50,11 @@ def test_score_cbd_point_full_contract():
     assert len(d["confidence"]["reasons"]) >= 1
     keys = {c["key"] for c in d["components"]}
     assert keys == {"pedestrian_demand", "worker_demand", "competition", "transport", "development"}
-    # development has no feature yet — must read as null, never 0 (invariant 4)
+    # development went live with score_version v2 (migration 0013): a CBD
+    # cell must carry a real score and its pipeline evidence.
     dev = next(c for c in d["components"] if c["key"] == "development")
-    assert dev["score"] is None
+    assert dev["score"] is not None and 0 <= dev["score"] <= 100
+    assert dev["evidence"]["pipeline_projects_800m"] > 0
     assert d["top_drivers"] and len(d["top_drivers"]) <= 3
     assert d["score_version"] and d["data_release"].startswith("melbourne-")
 

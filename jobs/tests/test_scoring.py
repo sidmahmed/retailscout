@@ -97,14 +97,18 @@ def _add_cell(db_conn, rel: int, cell_id: str, lon: float, lat: float) -> None:
     )
 
 
-def _add_feature(db_conn, rel, cid, jobs_800m, cafe, takeaway, tram, bus, train) -> None:
+def _add_feature(
+    db_conn, rel, cid, jobs_800m, cafe, takeaway, tram, bus, train, dev=None, dev_n=None
+) -> None:
     db_conn.execute(
         text("""
             INSERT INTO analytics.location_feature
                 (release_id, cell_id, feature_version, jobs_800m,
                  cafe_restaurant_400m, takeaway_food_400m,
-                 tram_stops_400m, bus_stops_400m, train_stops_800m)
-            VALUES (:rel, :cid, 'v1', :jobs, :cafe, :takeaway, :tram, :bus, :train)
+                 tram_stops_400m, bus_stops_400m, train_stops_800m,
+                 dev_pipeline_people_800m, dev_projects_800m)
+            VALUES (:rel, :cid, 'v1', :jobs, :cafe, :takeaway, :tram, :bus, :train,
+                    :dev, :dev_n)
         """),
         {
             "rel": rel,
@@ -115,6 +119,8 @@ def _add_feature(db_conn, rel, cid, jobs_800m, cafe, takeaway, tram, bus, train)
             "tram": tram,
             "bus": bus,
             "train": train,
+            "dev": dev,
+            "dev_n": dev_n,
         },
     )
 
@@ -157,11 +163,13 @@ def _setup_four_cells(db_conn, tmp_path) -> int:
     _add_cell(db_conn, rel, "B", 144.962, -37.810)
     _add_cell(db_conn, rel, "C", 144.964, -37.810)
     _add_cell(db_conn, rel, "D", 144.966, -37.810)
-    #             jobs  cafe takeaway tram bus train
-    _add_feature(db_conn, rel, "A", 400, 0, 0, 20, 20, 0)  # saturation 0, transit 40
-    _add_feature(db_conn, rel, "B", 300, 5, 5, 15, 15, 0)  # saturation 10, transit 30
-    _add_feature(db_conn, rel, "C", 200, 10, 10, 10, 10, 0)  # saturation 20, transit 20
-    _add_feature(db_conn, rel, "D", 100, 20, 20, 5, 5, 0)  # saturation 40, transit 10
+    #             jobs  cafe takeaway tram bus train  dev
+    # C has NO development feature (NULL) — like its missing pedestrian
+    # row, it exercises the §15.5 reweighting. dev_pct over A/B/D: 100/50/0.
+    _add_feature(db_conn, rel, "A", 400, 0, 0, 20, 20, 0, 4000, 40)  # sat 0,  transit 40
+    _add_feature(db_conn, rel, "B", 300, 5, 5, 15, 15, 0, 3000, 30)  # sat 10, transit 30
+    _add_feature(db_conn, rel, "C", 200, 10, 10, 10, 10, 0)  # sat 20, transit 20, dev NULL
+    _add_feature(db_conn, rel, "D", 100, 20, 20, 5, 5, 0, 1000, 10)  # sat 40, transit 10
     _add_ped(db_conn, rel, "A", 1000, "high")
     _add_ped(db_conn, rel, "B", 500, "medium")
     # C: NO pedestrian row -> insufficient
@@ -189,18 +197,19 @@ def test_all_max_cell_scores_100(db_conn, tmp_path):
     a = _score(db_conn, rel, "A")
     assert float(a["total_score"]) == pytest.approx(100)
     assert float(a["confidence_score"]) == 85  # 'high' band
-    assert a["development_score"] is None  # no growth-pipeline feature
+    assert float(a["development_score"]) == pytest.approx(100)
 
 
 def test_missing_foot_traffic_is_reweighted_not_zeroed(db_conn, tmp_path):
     rel = _setup_four_cells(db_conn, tmp_path)
     build_scores(db_conn, baseline_version=BV)
     c = _score(db_conn, rel, "C")
-    # C has no pedestrian estimate; its worker/comp/transport are all the
-    # 33.3 percentile. Total = weighted mean over just those three (foot and
-    # development reweighted out) = 33.3, NOT dragged toward 0 by a missing
-    # foot_traffic treated as 0.
+    # C has no pedestrian estimate AND no development feature; its
+    # worker/comp/transport are all the 33.3 percentile. Total = weighted
+    # mean over just those three (foot and development both reweighted
+    # out) = 33.3, NOT dragged toward 0 by missing components treated as 0.
     assert c["foot_traffic_score"] is None
+    assert c["development_score"] is None
     assert float(c["total_score"]) == pytest.approx(33.3, abs=0.2)
     assert float(c["confidence_score"]) == 15  # insufficient
 

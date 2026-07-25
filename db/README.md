@@ -379,8 +379,9 @@ and multi-schema layouts do not autogenerate well). Run with
     jsonb matching §17.3's response contract (component key/score/
     weight/evidence + confidence band/reasons) so the runtime API
     serves evidence with zero recomputation (invariant 5, 6).
-    `development_score` is always NULL — no growth-pipeline feature
-    exists yet (reweighted out of every score, invariant 4).
+    `development_score` was always NULL at v1 (no growth-pipeline
+    feature yet, reweighted out of every score, invariant 4) — live
+    since `0013`/score_version v2.
 
     Method, in `jobs/retailscout_jobs/scoring/score.py`
     (`build_scores`), via `cli.py build-scores` / `make build-scores`
@@ -422,5 +423,38 @@ and multi-schema layouts do not autogenerate well). Run with
     percentiles proves the reweighting-not-zeroing property precisely,
     confirms competition inversion, per-profile weight divergence, and
     the API-shaped explanation structure.
-13. `0013` — `app` schema: `project`, `saved_location`.
-14. `0014` — `audit` schema: `score_request`, `data_quality_result`.
+13. `0013` ✔ development-pipeline columns on
+    `analytics.location_feature` (§13): `dev_pipeline_people_800m`
+    (status- and distance-weighted "people equivalents" of the pipeline
+    within 800 m of the cell centroid) + `dev_projects_800m` (plain
+    project count, the evidence number). Every §13 factor —
+    status-probability (APPLIED 0.3 → COMPLETED 1.0), people-equivalent
+    coefficients (dwellings/office m²/retail m²/hotel rooms/student
+    beds), 800 m linear decay, and `completed_since_year` — lives in
+    `jobs/registry/development_config.yaml` (invariant 8, "factors must
+    be configuration, not hidden constants"), typed-loaded by
+    `development_config.py`. COMPLETED projects only count if finished
+    after the CLUE census year (2024): older completions are already in
+    the observed stock (their workers in `employment_block`) — counting
+    them again would double-count the present as the future. NULL
+    semantics deliberately differ from `jobs_800m`: the source has no
+    suppression and full geometry (0 of 1,438 rows lack coordinates), so
+    an empty catchment is a real 0, and NULL only means "not computed".
+    An unknown status in the data fails the build loudly rather than
+    silently zeroing pipeline.
+
+    Method in `features/development_features.py` (part of
+    `make build-features`); scoring wired in as score_version v2 —
+    development percentile joins the weighted mean, and the explanation
+    carries `pipeline_people_800m`/`pipeline_projects_800m` evidence.
+    Verified against live PostGIS: 2,317 cells, 350 fringe cells at an
+    observed 0, max ≈18k people-equivalents (Southbank/CBD north);
+    Bourke St Mall café total moved 77.2 → 78.8 with development 93.4
+    (10,662 people-equiv across 75 projects); golden-location ordering
+    unchanged. 10 new tests (104 total in jobs/): exact ST_Project
+    decay/status math, multi-field scale sums, old-completions-are-stock,
+    observed-zero-not-NULL, unknown-status failure; the 4-cell synthetic
+    scoring test now exercises §15.5 reweighting for development (cell C
+    has NULL dev) alongside foot traffic.
+14. `0014` — `app` schema: `project`, `saved_location`.
+15. `0015` — `audit` schema: `score_request`, `data_quality_result`.
