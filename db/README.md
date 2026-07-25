@@ -95,9 +95,38 @@ and multi-schema layouts do not autogenerate well). Run with
      snapshot) which all loaded correctly precisely because there is
      no FK. Idempotent re-load of the full 1.6M rows confirmed. See
      `jobs/tests/test_transform_pedestrian_hourly.py`.
-   **Remaining loaders are separate future units**: `business_establishments`,
-   `development_activity`, then GTFS `stops.txt` (nested inside two
-   zip levels — see `jobs/registry/sources.yaml`'s `ptv_gtfs` entry).
+   - `business_establishment.py` — all 413,550 rows loaded. Confirmed
+     against the FULL real file: NO stable natural key exists
+     ((census_year, property_id, trading_name, industry_anzsic4_code)
+     has 8,344 groups with >1 row out of 379,558), so this loader
+     deletes rows by `source_release_id` then reinserts, rather than
+     `ON CONFLICT` upsert — idempotent for re-running the SAME
+     release, not for deduplicating an unchanged file re-ingested on a
+     different day (that needs the entity-matching strategy already
+     deferred for `valid_from`/`valid_to`). 4,785 rows (~1.2%) have no
+     lon/lat; `geom` is left NULL for those, never a placeholder
+     point. Hit and fixed a real SQLAlchemy/psycopg batching bug along
+     the way: a bind parameter referenced twice inside a `CASE WHEN`
+     expression in a batched multi-row INSERT does not scope correctly
+     per row (`AmbiguousParameter`, then silently wrong values) — fixed
+     by computing WKT in Python and relying on `ST_GeomFromText(NULL)`
+     naturally returning NULL, removing the `CASE` entirely. See
+     `jobs/tests/test_transform_business_establishment.py`.
+   - `development_project.py` — all 1,438 rows loaded. Unlike
+     business_establishments, `development_key` IS confirmed globally
+     unique (0 duplicates) — a real natural key exists here — but this
+     loader still uses delete-by-release + reinsert for consistency
+     and because architecture.md's own refresh cadence for this source
+     is "Monthly" full snapshot, which is what full-replace-on-load
+     actually models. The ~30 numeric attribute columns (floor areas,
+     dwelling/bed counts, car/bike spaces — all confirmed integer, no
+     decimals anywhere in the real file) plus `data_format` and
+     `town_planning_application` are stored in `raw_attributes jsonb`
+     as real JSON numbers/strings, not stringified. See
+     `jobs/tests/test_transform_development_project.py`.
+   **Remaining loader is a separate future unit**: GTFS `stops.txt`
+   (nested inside two zip levels — see `jobs/registry/sources.yaml`'s
+   `ptv_gtfs` entry).
 4. `0004` — `analytics` schema: `analysis_cell`, `location_feature`
    (PK `(cell_id, feature_version)`), `location_score`
    (PK `(cell_id, business_profile, score_version)`), plus the

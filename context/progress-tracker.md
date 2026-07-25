@@ -5,19 +5,20 @@ Update this file after every meaningful implementation change.
 ## Current Phase
 
 - Phase 1 (data foundation) underway. Provenance tracking (`0002`),
-  the `core` schema (`0003`), and all three foot-traffic-critical
-  loaders (`municipal_boundary`, `pedestrian_sensor_locations`,
-  `pedestrian_hourly` — the full 1.6M-row dataset) are live and
-  cross-verified against each other and against real known rows.
+  the `core` schema (`0003`), and five of six core loaders
+  (`municipal_boundary`, `pedestrian_sensor_locations`,
+  `pedestrian_hourly`, `business_establishments`,
+  `development_activity`) are live and cross-verified against real
+  data. Only the GTFS `stops.txt` loader remains.
 
 ## Current Goal
 
-- Generate the analysis hex grid clipped to the loaded
-  `core.municipal_boundary` (resolution decision — open question below
-  — must be settled first). This is the next Phase 1→2 bridge item;
-  the remaining core loaders (`business_establishments`,
-  `development_activity`, GTFS `stops.txt`) can proceed in parallel
-  whenever picked up, but the grid blocks any scoring/feature work.
+- Finish the loader set: GTFS `stops.txt` → `core.transport_stop`
+  (nested inside two zip levels — profile the real archive before
+  writing code, per the established pattern for every loader so far).
+  After that, the next Phase 1→2 bridge item is the analysis hex grid
+  clipped to `core.municipal_boundary` (resolution decision — open
+  question below — must be settled first).
 
 ## Completed
 
@@ -179,6 +180,30 @@ Update this file after every meaningful implementation change.
   All 3 foot-traffic-critical loaders (boundary, sensors, hourly
   observations) are now done and cross-verified — Phase 2's pedestrian
   demand methodology has real data to work against whenever it starts.
+- Loaders: `business_establishments` → `core.business_establishment`
+  and `development_activity` → `core.development_project`
+  (2026-07-25) — all 413,550 and 1,438 real rows loaded respectively.
+  Profiling before writing either loader confirmed a real difference
+  between the two sources: `business_establishments` genuinely has NO
+  stable natural key (8,344 candidate-key groups have >1 row), while
+  `development_activity`'s `development_key` IS confirmed globally
+  unique. Both loaders use delete-by-`source_release_id`-then-reinsert
+  regardless (documented per-loader why — for developments it matches
+  the source's own monthly full-refresh cadence rather than being a
+  fallback). Hit and fixed a real bug while building the first of the
+  two: SQLAlchemy's batched multi-row INSERT does not correctly scope
+  a bind parameter referenced twice inside a `CASE WHEN` per row
+  (`AmbiguousParameter`, then silently wrong values, discovered
+  against the real 413k-row file, not a small fixture) — fixed by
+  computing WKT geometry in Python and relying on
+  `ST_GeomFromText(NULL) IS NULL` instead of branching in SQL; the
+  fixed pattern was reused for `development_project` and future
+  loaders should default to it rather than a SQL-side `CASE`.
+  `development_project`'s ~30 wide numeric attribute columns are
+  stored in `raw_attributes jsonb` as real JSON numbers, confirmed
+  decimal-free across the whole file first. 8 new tests (32 total in
+  jobs/, up from 25). Only the GTFS `stops.txt` loader remains from
+  the original core-schema loader set.
 
 ### Data validation findings
 
@@ -281,18 +306,18 @@ Each item is one unit of work (ai-workflow-rules.md). In order:
    `sources.yaml` when answered. (Transport archives: resolved via
    adopt; only the live-feed question remains open.) — deprioritized
    per user 2026-07-25, revisit before beta/attribution work.
-2. Generate the analysis hex grid clipped to the municipal boundary
+2. Loader: GTFS `stops.txt` → `core.transport_stop` (nested inside two
+   zip levels — see `jobs/registry/sources.yaml`'s `ptv_gtfs` entry;
+   `mode` must be derived from the numbered folder, not a native GTFS
+   column; filter stops to municipal boundary + ~1km buffer rather
+   than loading the full statewide set).
+3. Generate the analysis hex grid clipped to the municipal boundary
    (resolution decision — open question below — must be settled
    first; `core.municipal_boundary` is now loaded and ready to clip
    against). This needs `h3` or PostGIS-generated hexagons —
    `geopandas`/`shapely`/`h3` are not yet added to `jobs/pyproject.toml`
    (deliberately deferred until a loader needed real geometric
    computation — this is that loader).
-3. Remaining core loaders, any order, none blocking the grid:
-   `business_establishments` → `core.business_establishment`,
-   `development_activity` → `core.development_project`, GTFS
-   `stops.txt` → `core.transport_stop` (nested inside two zip levels
-   — see `jobs/registry/sources.yaml`'s `ptv_gtfs` entry).
 
 ## Definition of Done for any unit (copy of ai-workflow-rules.md gate)
 
