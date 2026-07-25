@@ -4,7 +4,25 @@ Update this file after every meaningful implementation change.
 
 ## Current Phase
 
-- PHASE 3 (product API + frontend) is UNDERWAY. The runtime API is
+- FRONTEND CORE IS LIVE (2026-07-25): the Explore surface is the app's
+  root page — full-height MapLibre map (OpenFreeMap positron basemap,
+  key-free) rendering the suitability MVT hexes, DB-driven profile
+  switcher, legend, and the §18.3 score drawer (fixed evidence order;
+  null component scores render "Not computed", never 0; separate
+  score/confidence palettes; friendly FR-02 out-of-area state).
+  Typed data layer: zod-validated fetch (`lib/api/client.ts`) under the
+  generated OpenAPI types (`lib/api/types.ts` adapter), React Query
+  hooks (`lib/api/hooks.ts`), runtime CSS-token access for MapLibre
+  paint (`lib/tokens.ts` — no hardcoded hex). Verified: typecheck +
+  build green; live smoke through the dev proxy (page 200, CBD z14
+  tile 15,744 B, Bourke St Mall café 77.2/high band).
+  REMAINING FRONTEND WORK IS SPECCED FOR HANDOFF in
+  `context/frontend-handoff.md` (daypart chart incl. its small API
+  addition, comparison tray, search, mobile bottom sheet, confidence
+  overlay, raw point layers) — read that file before continuing
+  frontend development.
+
+- The runtime API is
   implemented for real (2026-07-25): `/api/v1/locations/score` (was a
   501 stub) serves the full §17.3 ScoreResponse from
   `analytics.location_score` — point→cell via ST_Contains, 400 outside

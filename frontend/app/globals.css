@@ -39,7 +39,7 @@
   --state-error: #c4462b;
   --state-success: #1d6f5c;
 
-  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+  --font-sans: var(--font-inter, "Inter"), system-ui, -apple-system, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
 }
 
