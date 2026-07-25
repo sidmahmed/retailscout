@@ -299,10 +299,30 @@ and multi-schema layouts do not autogenerate well). Run with
    (`jsonb_typeof` = 'null' vs 'number'); all 603 2024 blocks join to
    `clue_block` with 520,544 known jobs (plausible CBD employment).
    3 new tests (66 total in jobs/, up from 63).
-9. `0009` — remaining `analytics.location_feature` columns as their
-   families land (worker demand `jobs_400m`/`jobs_800m`, pedestrian
-   demand, development) + `analytics.location_score`
-   (PK `(cell_id, business_profile, score_version)`), created with the
-   scoring engine.
-10. `0010` — `app` schema: `project`, `saved_location`.
-11. `0011` — `audit` schema: `score_request`, `data_quality_result`.
+9. `0009` ✔ worker-demand columns on `analytics.location_feature`
+   (`jobs_400m`, `jobs_800m`) — third feature family (§12). Loader
+   `jobs/retailscout_jobs/features/worker_features.py`
+   (`build_worker_features`), joined into the `build-features`
+   orchestrator (business → transport → worker, one transaction).
+   AREA-WEIGHTED allocation (§9.3): each cell's jobs =
+   Σ over overlapping CLUE blocks of `total_jobs × (overlap_area /
+   block_area)` — chosen over whole-block/centroid counting because
+   blocks (~250 m) are large vs. the catchment and block centroids are
+   unreliable (some outside their own polygon, found in 0007). Area
+   ratio computed in EPSG:4326 (lon/lat distortion cancels in the
+   ratio). SUPPRESSION preserved (invariant 4): suppressed blocks (NULL
+   total) contribute nothing, and a catchment with NO known-job block
+   yields NULL (unknown), never 0 — SUM over an empty filtered set is
+   NULL. Verified against live PostGIS: 0 cells with jobs_400m > jobs_800m
+   (monotonic), 22 NULL jobs_400m (uncovered), CBD cell 64,110 jobs
+   within 400 m / 199,106 within 800 m; jobs_800m recomputed
+   independently matched to the unit (199,106), with 8 suppressed blocks
+   in that catchment correctly excluded. 5 new tests (71 total in jobs/,
+   up from 66), incl. fully-contained (fraction 1), partial
+   area-weighting (~4× between radii), suppressed→NULL, observed 0→0.
+10. `0010` — remaining `analytics.location_feature` columns (pedestrian
+    demand, development) + `analytics.location_score`
+    (PK `(cell_id, business_profile, score_version)`), created with the
+    scoring engine.
+11. `0011` — `app` schema: `project`, `saved_location`.
+12. `0012` — `audit` schema: `score_request`, `data_quality_result`.

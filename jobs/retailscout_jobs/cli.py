@@ -243,12 +243,14 @@ def cmd_build_features(feature_version: str) -> int:
     from .db import get_engine
     from .features.business_features import build_business_features
     from .features.transport_features import build_transport_features
+    from .features.worker_features import build_worker_features
 
     engine = get_engine()
     try:
         with engine.begin() as conn:
             biz = build_business_features(conn, feature_version=feature_version)
             trn = build_transport_features(conn, feature_version=feature_version)
+            wrk = build_worker_features(conn, feature_version=feature_version)
     finally:
         engine.dispose()
 
@@ -258,6 +260,7 @@ def cmd_build_features(feature_version: str) -> int:
     )
     print(f"  business    (census_year={biz.census_year}, {biz.catchment_metres}m)")
     print(f"  transport   (tram/bus {trn.tram_bus_radius_m}m, train {trn.train_radius_m}m)")
+    print(f"  worker      (census_year={wrk.census_year}, area-weighted 400m/800m)")
     return 0
 
 

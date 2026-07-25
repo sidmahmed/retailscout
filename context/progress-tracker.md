@@ -15,17 +15,17 @@ Update this file after every meaningful implementation change.
 
 ## Current Goal
 
-- Worker-demand features (CLUE jobs-by-block). The two core
-  prerequisites are DONE: (a1) `core.clue_block` geometry (0007) and
-  (a2) `core.employment_block` jobs (0008) — both live and verified.
-  Next: (b) the worker-demand FEATURE — `ALTER location_feature ADD
-  jobs_400m/jobs_800m` + a `worker_features` loader allocating latest-
-  year block job totals to cells by POLYGON intersection (§9.3), joined
-  into the build-features orchestrator. Must preserve suppression: a
-  block with NULL total_jobs contributes unknown, not 0 (a cell whose
-  catchment blocks are all suppressed should read NULL, not 0). After
-  worker demand: pedestrian demand (§10, biggest unit), then the
-  scoring engine.
+- Worker-demand features are COMPLETE (0007 geometry, 0008 jobs, 0009
+  feature). `location_feature` now carries business, transport, and
+  worker-demand columns for all 2,317 cells. Next family: PEDESTRIAN
+  DEMAND (§10) — the highest-value and biggest unit, likely split:
+  (1) per-sensor daypart baselines from the 1.6M
+  `core.pedestrian_observation` rows (day-type × daypart robust stats),
+  with dayparts in versioned config; (2) distance-decay interpolation
+  of those baselines to cells + a SEPARATE foot-traffic confidence
+  value (§10.3-10.4), which is explicitly NOT to be presented as
+  observed storefront footfall. After pedestrian demand: the scoring
+  engine (`location_score`, §15) + golden-location evaluation.
 
 ## Completed
 
@@ -378,6 +378,29 @@ Update this file after every meaningful implementation change.
   join to `clue_block` with 520,544 known jobs. Both worker-demand core
   prerequisites (geometry + jobs) are now in place; the feature is next.
   3 new tests (66 total in jobs/, up from 63).
+- Migration `0009` + worker-demand feature (2026-07-25) — third feature
+  family, completing worker demand. `ALTER location_feature ADD
+  jobs_400m/jobs_800m` + `features/worker_features.py`, joined into the
+  build-features orchestrator (business → transport → worker, one
+  transaction). AREA-WEIGHTED allocation (§9.3): each cell's jobs =
+  Σ over overlapping CLUE blocks of `total_jobs × (overlap_area /
+  block_area)` — chosen over whole-block/centroid counting because
+  blocks (~250 m) are large relative to the catchment and block
+  centroids are unreliable (found in 0007). Area ratio computed in
+  EPSG:4326 (lon/lat distortion cancels in the ratio, so no reprojection
+  needed). Suppression preserved (invariant 4): suppressed blocks
+  contribute nothing, and a catchment with NO known-job block yields
+  NULL (unknown), never 0 — SUM over an empty filtered set is NULL, the
+  exact semantics wanted. Verified against live PostGIS: 0 monotonicity
+  violations (jobs_400m ≤ jobs_800m for every cell), 22 NULL jobs_400m
+  (honestly uncovered cells), CBD cell 64,110 jobs within 400 m /
+  199,106 within 800 m (plausible for Melbourne's concentrated
+  employment core), and jobs_800m recomputed independently matched to
+  the unit (199,106) with the 8 suppressed blocks in that catchment
+  correctly excluded. 5 new tests (71 total in jobs/, up from 66):
+  fully-contained block → whole total, partial overlap → area-weighted
+  ~4× between radii, suppressed → NULL, observed 0 → 0, no active
+  release → raises.
 
 ### Data validation findings
 
@@ -493,15 +516,15 @@ Each item is one unit of work (ai-workflow-rules.md). In order:
 5. Worker-demand features (CLUE jobs-by-block), continued:
    - ~~(a1) `core.clue_block` geometry~~ **DONE 2026-07-25** (0007).
    - ~~(a2) `core.employment_block` jobs~~ **DONE 2026-07-25** (0008).
-   - (b) worker-demand feature columns (`jobs_400m`, `jobs_800m`)
-     allocating latest-year block job totals to cells by POLYGON
-     intersection (§9.3), joined into the build-features orchestrator.
-     Preserve suppression: a NULL total contributes unknown, not 0.
-   - Pedestrian demand (§10) — highest value, biggest unit: sensor
-     daypart baselines from the 1.6M `core.pedestrian_observation`
-     rows, then distance-decay interpolation to cells + a separate
-     foot-traffic confidence value. Likely split across ≥2 units.
-6. Scoring engine: `analytics.location_score` + versioned weighted
+   - ~~(b) worker-demand feature `jobs_400m`/`jobs_800m`~~ **DONE
+     2026-07-25** (0009, area-weighted, suppression-safe).
+6. Pedestrian demand (§10) — highest value, biggest unit: sensor
+   daypart baselines from the 1.6M `core.pedestrian_observation` rows
+   (day-type × daypart robust stats, dayparts in versioned config),
+   then distance-decay interpolation to cells + a separate foot-traffic
+   confidence value (§10.3-10.4). Split across ≥2 units. Never present
+   as observed storefront footfall.
+7. Scoring engine: `analytics.location_score` + versioned weighted
    scoring (§15) once enough feature families exist, then
    golden-location evaluation.
 
