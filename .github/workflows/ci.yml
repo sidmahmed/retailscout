@@ -17,8 +17,9 @@ jobs:
       - run: uv run pytest
 
   jobs-worker:
-    # Has a postgres service (unlike backend/) because jobs/tests/test_provenance.py
-    # writes to source.* and needs migration 0002 applied first.
+    # Has a postgres service (unlike backend/) because the provenance,
+    # transform, and grid tests write to source.*/core.*/analytics.* and
+    # need migrations applied first (alembic upgrade head, below).
     runs-on: ubuntu-latest
     defaults: { run: { working-directory: jobs } }
     services:

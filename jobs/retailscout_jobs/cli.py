@@ -216,6 +216,25 @@ def cmd_load(source_id: str) -> int:
     return 0
 
 
+def cmd_build_grid(resolution: int, notes: str | None, activate: bool) -> int:
+    from .db import get_engine
+    from .features.grid import build_grid
+
+    engine = get_engine()
+    try:
+        with engine.begin() as conn:
+            result = build_grid(conn, resolution=resolution, notes=notes, activate=activate)
+    finally:
+        engine.dispose()
+
+    print(
+        f"Built analytics.data_release#{result.release_id}: "
+        f"{result.cell_count} cells at H3 res {result.resolution} "
+        f"({'activated' if result.activated else 'NOT activated'})"
+    )
+    return 0
+
+
 def cmd_freshness(source_id: str) -> int:
     registry = load_registry()
     source = registry.get(source_id)
@@ -262,6 +281,21 @@ def main(argv: list[str] | None = None) -> int:
         "load", help="Load the most recent raw snapshot for a source into its core.* table"
     )
     p_load.add_argument("source_id")
+    p_grid = sub.add_parser(
+        "build-grid",
+        help="Build the hex analysis grid (analytics.analysis_cell) from core.municipal_boundary",
+    )
+    from .features.grid import DEFAULT_RESOLUTION
+
+    p_grid.add_argument(
+        "--resolution", type=int, default=DEFAULT_RESOLUTION, help="H3 resolution (default: 10)"
+    )
+    p_grid.add_argument("--notes", default=None, help="Free-text note stored on the data_release")
+    p_grid.add_argument(
+        "--no-activate",
+        action="store_true",
+        help="Build the release but do NOT flip active_release to it",
+    )
     p_fresh = sub.add_parser("freshness", help="Probe upstream freshness for one source")
     p_fresh.add_argument("source_id")
 
@@ -274,6 +308,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_adopt(args.source_id, args.files, args.retrieved_date, args.note)
     if args.command == "load":
         return cmd_load(args.source_id)
+    if args.command == "build-grid":
+        return cmd_build_grid(args.resolution, args.notes, not args.no_activate)
     if args.command == "freshness":
         return cmd_freshness(args.source_id)
     return 1

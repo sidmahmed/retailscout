@@ -4,28 +4,30 @@ Update this file after every meaningful implementation change.
 
 ## Current Phase
 
-- Phase 1 (data foundation) core loading is COMPLETE. Provenance
-  tracking (`0002`), the `core` schema (`0003`), and all six core
-  loaders (`municipal_boundary`, `pedestrian_sensor_locations`,
+- Phase 1 (data foundation) core loading is COMPLETE, and the Phase
+  1→2 bridge (the hex analysis grid) is DONE. Provenance tracking
+  (`0002`), the `core` schema (`0003`), all six core loaders
+  (`municipal_boundary`, `pedestrian_sensor_locations`,
   `pedestrian_hourly`, `business_establishments`,
-  `development_activity`, `ptv_gtfs`→`transport_stop`) are live,
-  verified against real data, and cross-checked against each other.
-  Every `core.*` table defined in migration 0003 is populated with
-  real rows sourced from real, checksummed, provenance-tracked
-  snapshots. Ready to move into Phase 1→2 bridge work (hex grid) or
-  Phase 2 (feature/scoring engine) proper.
+  `development_activity`, `ptv_gtfs`→`transport_stop`), and now the
+  `analytics` release machinery + hex grid (`0004`) are live, verified
+  against real data, and cross-checked against each other. Every
+  `core.*` table is populated from real, checksummed,
+  provenance-tracked snapshots, and `analytics.analysis_cell` holds a
+  real 2,317-cell grid published atomically as `data_release`. Ready
+  to move into Phase 2 (feature/scoring engine) proper.
 
 ## Current Goal
 
-- Generate the analysis hex grid clipped to `core.municipal_boundary`
-  (resolution decision — open question below — must be settled
-  first). This needs `h3` or PostGIS-generated hexagons —
-  `geopandas`/`shapely`/`h3` are not yet in `jobs/pyproject.toml`
-  (deliberately deferred until a loader needed real geometric
-  computation beyond PostGIS pass-through; the GTFS loader's boundary
-  filter used pure PostGIS + a Python bbox pre-filter, so it still
-  didn't need them — this may finally be the one that does, or H3's
-  Python bindings may be enough on their own).
+- Start Phase 2 feature-building against the grid: the first
+  `location_feature` computation (architecture.md §§10-14 — pedestrian
+  daypart aggregates, business-mix summaries, catchments), plus the
+  `0005` migration that adds `analytics.location_feature` /
+  `analytics.location_score` referencing the `data_release` the grid
+  already establishes. That migration is deliberately NOT written yet —
+  its table shapes depend on the scoring methodology, and per the
+  established practice (profile/design before DDL) it comes WITH its
+  first loader, not ahead of it.
 
 ## Completed
 
@@ -238,6 +240,45 @@ Update this file after every meaningful implementation change.
   and verified against real data.** Cross-checks hold across the whole
   set: 134 sensors and 1,300 transport stops both confirmed inside the
   loaded municipal boundary.
+- Migration `0004` + hex analysis grid (2026-07-25) — the Phase 1→2
+  bridge. Added the `analytics` schema's atomic-release machinery
+  (`data_release`, singleton `active_release` pointer) and the
+  precomputed hex grid (`analysis_cell`), plus the grid builder
+  `jobs/retailscout_jobs/features/grid.py` (`build_grid`, wired via
+  `cli.py build-grid` / `make build-grid`). First `features/` module —
+  distinct from `transform/` (raw→core); it computes a derived
+  analytics artifact from already-loaded `core.*` data and publishes it
+  as a versioned release. Deliberately scoped 0004 to the grid +
+  release pointer only, deferring `location_feature`/`location_score`
+  to `0005` (with their Phase 2 loaders) rather than modelling them
+  before the scoring methodology exists — same "don't speculatively
+  model" discipline as 0003.
+  **Resolution question (previously open) is settled empirically**: H3
+  res 10, chosen by benchmarking every candidate against the REAL
+  37.66 km² boundary — res 8→43 cells (~920m, too coarse), res 9→307
+  (~350m), res 10→2,317 (~130m, block-face scale, lands in
+  architecture.md's ~100-200m target), res 11→14,966 (~50m, needlessly
+  fine). Resolution is a parameter recorded per `data_release`, so a
+  future release can change it without a schema or code change.
+  Verified against live PostGIS on the real municipality (not just a
+  fixture): 2,317 cells, **100.00% boundary coverage** (union of hexes
+  fully covers the boundary — no interior gap where an in-boundary
+  click could hit no cell), 0 overlapping cell pairs (clean tiling), 0
+  cells failing the precise `ST_Intersects` prune, and the CBD golden
+  control (Bourke St Mall) maps to exactly one cell whose stored
+  `cell_id` equals `h3.latlng_to_cell` for that point (DB geometry and
+  H3 index agree — so the runtime API can map a click via `ST_Contains`
+  and stay H3-dependency-free, ADR-002). Out-of-boundary control
+  (Richmond) maps to zero cells, consistent with FR-02. Atomic release
+  swap verified: a second `build-grid` flips `active_release`, marks
+  the prior release `superseded`, and retains the old release's cells
+  so rollback is lossless (invariant 3). h3 only enumerates candidate
+  cells + yields geometry; ALL clipping is PostGIS, so
+  shapely/geopandas are STILL not in `jobs/pyproject.toml` — only `h3`
+  was added. 8 new tests (45 total in jobs/, up from 37). Note: the
+  dev DB now holds two grid releases (#1 superseded, #2 active) from
+  the manual verification runs — expected release-history state, not
+  cruft to clean.
 
 ### Data validation findings
 
@@ -340,18 +381,15 @@ Each item is one unit of work (ai-workflow-rules.md). In order:
    `sources.yaml` when answered. (Transport archives: resolved via
    adopt; only the live-feed question remains open.) — deprioritized
    per user 2026-07-25, revisit before beta/attribution work.
-2. Generate the analysis hex grid clipped to the municipal boundary
-   (resolution decision — open question below — must be settled
-   first; `core.municipal_boundary` is now loaded and ready to clip
-   against). This needs `h3` or PostGIS-generated hexagons —
-   `geopandas`/`shapely`/`h3` are not yet added to `jobs/pyproject.toml`
-   (deliberately deferred until a loader needed real geometric
-   computation — this is that loader, now that all six core loaders
-   are done and none of them needed it).
-3. Once the grid exists: start Phase 2 feature-building against it
-   (catchments, pedestrian daypart aggregates, business-mix summaries)
-   per architecture.md §§10-14 — the first real consumer of everything
-   loaded in this phase.
+2. ~~Generate the analysis hex grid~~ **DONE 2026-07-25** — migration
+   0004 + `features/grid.py`, H3 res 10, 2,317 real cells published as
+   an atomic `analytics.data_release` (see Completed).
+3. Start Phase 2 feature-building against the grid (catchments,
+   pedestrian daypart aggregates, business-mix summaries) per
+   architecture.md §§10-14 — the first real consumer of everything
+   loaded in this phase. First unit: migration `0005`
+   (`analytics.location_feature`/`location_score`) + the first
+   feature loader, designed together against real data.
 
 ## Definition of Done for any unit (copy of ai-workflow-rules.md gate)
 
@@ -372,8 +410,12 @@ Each item is one unit of work (ai-workflow-rules.md). In order:
   is an API metadata gap (data is actually CC BY like its sibling
   sensor-locations dataset) or a genuine licensing difference —
   affects what the attribution footer can claim.
-- Exact hex-grid resolution (architecture doc suggests ~100–200m;
-  needs benchmarking against block-face scale before locking in).
+- ~~Exact hex-grid resolution~~ **RESOLVED 2026-07-25**: H3 res 10
+  (~130m cell width, 2,317 cells over the real boundary) — the only
+  resolution landing in the architecture doc's ~100-200m block-face
+  target when benchmarked against the real municipality. Stored per
+  `data_release`, so revisitable via a new release without a schema
+  change.
 - Whether to attempt network-distance (pedestrian-network) catchments
   in Phase 2 or start with geodesic buffers and label them approximate.
 - ~~Whether PTV GTFS is brought in during the MVP or deferred~~

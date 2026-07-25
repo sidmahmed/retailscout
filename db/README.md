@@ -153,10 +153,57 @@ and multi-schema layouts do not autogenerate well). Run with
    the FR-02 boundary check tests and the transport_stop filter;
    pedestrian sensors ← all 134 confirmed inside the boundary;
    transport stops ← all 1,300 confirmed inside the boundary + 1km.
-4. `0004` — `analytics` schema: `analysis_cell`, `location_feature`
+4. `0004` ✔ `analytics` schema — atomic-release machinery + the hex
+   analysis grid. **Deliberately scoped to the grid**, not the full
+   roadmap sketch below: the original plan grouped `analysis_cell`,
+   `location_feature`, and `location_score` under one migration, but
+   the feature/score table shapes depend on the Phase 2 scoring
+   methodology (architecture.md §§10-14) that does not exist yet —
+   modelling them now would be the speculative guessing the core schema
+   (0003) avoided. They move to `0005` (see below), created with their
+   loaders. Built now:
+   - `analytics.data_release` — one row per published analytics
+     generation (the grid now; its features/scores later). Distinct
+     from `source.dataset_release` (0002): that tracks raw *downloads*,
+     this tracks published *computed* artifacts the runtime serves.
+     `grid_resolution` (the H3 resolution, uniform per release) and
+     `boundary_source_release_id` (which raw boundary snapshot the grid
+     was clipped against) live here, so a cell traces all the way back
+     to the boundary bytes.
+   - `analytics.active_release` — singleton pointer (boolean PK fixed
+     to `true` ⇒ at most one row) naming the live release. Publishing
+     is an atomic UPDATE of this one row (invariant 3); rollback is the
+     same UPDATE back to a prior `release_id`. Verified against live
+     PostGIS: a second `build-grid` flips the pointer, marks the prior
+     release `superseded`, and **retains the old release's cells** so
+     rollback is lossless.
+   - `analytics.analysis_cell` — the precomputed hex grid, PK
+     `(release_id, cell_id)` so each release OWNS its grid and is a
+     self-contained atomically-swappable unit (ADR-004). `geom` is the
+     full H3 hexagon (used at request time to map a click to its cell
+     via `ST_Contains` — keeps the runtime API H3-dependency-free,
+     ADR-002); `centroid` is H3's canonical cell centre, stored for
+     Phase 2 catchment math.
+   The grid builder is `jobs/retailscout_jobs/features/grid.py`
+   (`build_grid`), invoked via `cli.py build-grid` / `make build-grid`.
+   **Resolution = H3 res 10**, chosen by benchmarking every candidate
+   resolution against the REAL boundary (not a lookup table): res 8 →
+   43 cells (~920m, too coarse), res 9 → 307 (~350m), **res 10 → 2,317
+   (~130m, block-face scale, matches architecture.md's ~100-200m
+   target)**, res 11 → 14,966 (~50m, needlessly fine). Verified against
+   live PostGIS on the real municipality: 2,317 cells, **100.00%
+   boundary coverage** (no interior gaps — every in-boundary click maps
+   to a cell), 0 overlapping cell pairs (clean tiling), 0 cells failing
+   the precise `ST_Intersects` prune, and the CBD golden control
+   (Bourke St Mall) maps to exactly one cell whose stored `cell_id`
+   equals `h3.latlng_to_cell` for that point — so the DB geometry and
+   the H3 index agree. h3 only enumerates candidate cells + yields their
+   geometry; ALL clipping is PostGIS (`ST_Intersects`), so
+   shapely/geopandas are still not needed. See
+   `jobs/tests/test_features_grid.py` (8 tests).
+5. `0005` — `analytics` feature/score tables: `location_feature`
    (PK `(cell_id, feature_version)`), `location_score`
-   (PK `(cell_id, business_profile, score_version)`), plus the
-   `data_release` / `active_release_id` pointer that makes releases
-   atomic (architecture.md invariant 3).
-5. `0005` — `app` schema: `project`, `saved_location`.
-6. `0006` — `audit` schema: `score_request`, `data_quality_result`.
+   (PK `(cell_id, business_profile, score_version)`), referencing the
+   `data_release` from 0004. Created with their Phase 2 loaders.
+6. `0006` — `app` schema: `project`, `saved_location`.
+7. `0007` — `audit` schema: `score_request`, `data_quality_result`.

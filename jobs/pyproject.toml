@@ -9,12 +9,18 @@ dependencies = [
     "pyyaml>=6.0",
     "sqlalchemy>=2.0",
     "psycopg[binary]>=3.1",
+    # Hex-grid generation (features/grid.py, db/README.md 0004). H3 gives
+    # a fixed global cell hierarchy so cell_ids are stable across releases
+    # and comparable to any future municipality — no ad hoc grid to version.
+    # PostGIS still does all the boundary clipping (ST_Intersects); h3 only
+    # enumerates candidate cells, so shapely/geopandas remain unneeded.
+    "h3>=4.0",
 ]
 
 # Add these as the corresponding pipeline stages are built — declared
 # here as documentation so nobody reaches for pandas out of habit:
 #   transform/features:  "polars", "pyarrow", "pandera"
-#   geospatial:          "geopandas", "shapely", "pyproj", "h3"
+#   geospatial:          "geopandas", "shapely", "pyproj"
 #
 # geoalchemy2 is intentionally NOT added yet: no geometry columns exist
 # in jobs/ code until the core.* staging loader (db/README.md 0003).
