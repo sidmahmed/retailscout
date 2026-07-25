@@ -27,7 +27,10 @@ from app.schemas.score import (
 _COMPONENT_LABELS = {
     "pedestrian_demand": "pedestrian activity",
     "worker_demand": "nearby worker population",
-    "competition": "competitive pressure",
+    # The component scores market OPENNESS (inverted saturation): a low
+    # score means a crowded market. "competitive pressure" here would
+    # invert the meaning of "Weak ..."/"Strong ..." driver strings.
+    "competition": "market openness",
     "transport": "public-transport access",
     "development": "development pipeline",
 }

@@ -94,6 +94,10 @@ export function SuitabilityMap({ profile, selected, onSelect }: Props) {
         type: "fill",
         source: SOURCE_ID,
         "source-layer": SOURCE_LAYER,
+        // A withheld (null) score must not be painted as if it were a
+        // score (invariant 4) — MVT omits null properties, so such cells
+        // simply lack total_score and show only the outline.
+        filter: ["has", "total_score"],
         paint: {
           "fill-color": scorePaint(),
           "fill-opacity": [
@@ -185,5 +189,8 @@ export function SuitabilityMap({ profile, selected, onSelect }: Props) {
       .addTo(map);
   }, [selected]);
 
-  return <div ref={containerRef} className="absolute inset-0" />;
+  // Inline style, not Tailwind classes: maplibre-gl.css is unlayered and
+  // its .maplibregl-map { position: relative } beats Tailwind's layered
+  // .absolute in the cascade, collapsing the container to height 0.
+  return <div ref={containerRef} style={{ position: "absolute", inset: 0 }} />;
 }
