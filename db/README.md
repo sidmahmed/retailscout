@@ -344,10 +344,33 @@ and multi-schema layouts do not autogenerate well). Run with
     weekend days). 7 new tests (78 total in jobs/, up from 71). NEXT
     (step 2): distance-decay interpolation of these baselines to grid
     cells + a separate foot-traffic confidence value (§10.3-10.4).
-11. `0011` — remaining `analytics.location_feature` columns (pedestrian
-    demand from interpolating 0010's baselines, development) +
-    `analytics.location_score`
+11. `0011` ✔ `analytics.cell_pedestrian_daypart` — interpolated foot
+    traffic per cell (§10.3-10.4), step 2 of pedestrian demand. Narrow
+    table (row per release × cell × day_type × daypart), release-scoped
+    (FK to analysis_cell). Loader
+    `jobs/retailscout_jobs/features/pedestrian_features.py`
+    (`build_pedestrian_features`), via `cli.py build-pedestrian-features`
+    / `make build-ped-features` (needs `build-pedestrian-baselines`
+    first). Distance-decay weighted mean of nearby sensor baseline
+    medians: `weight = exp(-dist/decay)`, geodesic distance (network
+    distance deferred → labelled modelled/approximate, NEVER observed
+    footfall). Interpolation params + confidence thresholds in the
+    versioned config (`pedestrian_config.yaml`). Foot-traffic confidence
+    (§10.4) stored SEPARATELY from the estimate: no sensor in range →
+    'insufficient' (no row); else high/medium/low by nearest-sensor
+    distance + count. Verified against live PostGIS: 9,948 rows across
+    829 cells (the other ~1,488 legitimately insufficient — the sensor
+    net is CBD-focused, ~61% of the municipality is beyond 650 m of any
+    sensor); weekday-lunch confidence high 320 / medium 311 / low 198;
+    Bourke St Mall weekday-lunch estimate 1,410/hr (high confidence,
+    nearest sensor 30 m), correctly a distance-weighted blend inside the
+    nearby sensors' [31, 3101] median range. 7 new tests (85 total in
+    jobs/, up from 78): exact decay weighting, each confidence band,
+    insufficient→no row, unlocated-sensor exclusion.
+12. `0012` — remaining `analytics.location_feature` columns (development)
+    + `analytics.location_score`
     (PK `(cell_id, business_profile, score_version)`), created with the
-    scoring engine.
-12. `0012` — `app` schema: `project`, `saved_location`.
-13. `0013` — `audit` schema: `score_request`, `data_quality_result`.
+    scoring engine, which reads the business/transport/worker columns
+    plus `cell_pedestrian_daypart`.
+13. `0013` — `app` schema: `project`, `saved_location`.
+14. `0014` — `audit` schema: `score_request`, `data_quality_result`.

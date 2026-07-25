@@ -283,6 +283,25 @@ def cmd_build_pedestrian_baselines() -> int:
     return 0
 
 
+def cmd_build_pedestrian_features() -> int:
+    from .db import get_engine
+    from .features.pedestrian_features import build_pedestrian_features
+
+    engine = get_engine()
+    try:
+        with engine.begin() as conn:
+            result = build_pedestrian_features(conn)
+    finally:
+        engine.dispose()
+
+    print(
+        f"Built pedestrian cell features for release#{result.release_id} "
+        f"(baseline_version={result.baseline_version}): "
+        f"{result.rows_written} cell×day_type×daypart rows"
+    )
+    return 0
+
+
 def cmd_freshness(source_id: str) -> int:
     registry = load_registry()
     source = registry.get(source_id)
@@ -355,6 +374,10 @@ def main(argv: list[str] | None = None) -> int:
         "build-pedestrian-baselines",
         help="Compute per-sensor daypart baselines into analytics.sensor_daypart_baseline",
     )
+    sub.add_parser(
+        "build-pedestrian-features",
+        help="Interpolate sensor baselines to grid cells (analytics.cell_pedestrian_daypart)",
+    )
     p_fresh = sub.add_parser("freshness", help="Probe upstream freshness for one source")
     p_fresh.add_argument("source_id")
 
@@ -373,6 +396,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_build_features(args.feature_version)
     if args.command == "build-pedestrian-baselines":
         return cmd_build_pedestrian_baselines()
+    if args.command == "build-pedestrian-features":
+        return cmd_build_pedestrian_features()
     if args.command == "freshness":
         return cmd_freshness(args.source_id)
     return 1

@@ -29,3 +29,19 @@ day_types:
   - { name: weekday, isodows: [1, 2, 3, 4, 5] }
   - { name: saturday, isodows: [6] }
   - { name: sunday, isodows: [7] }
+
+# Interpolation of sensor baselines to grid cells (§10.3-10.4). GEODESIC
+# (straight-line) distance for now — §10.3's network distance is deferred
+# until a maintained pedestrian network exists, so estimates are labelled
+# modelled/approximate. A sensor's weight decays as exp(-distance/decay);
+# sensors beyond max_sensor_distance_m don't contribute. sensor_quality
+# and street_relationship (§10.3) are 1.0 for all sensors in v1.
+interpolation:
+  decay_distance_m: 250 # weight ~0.37 at 250 m, ~0.14 at 500 m
+  max_sensor_distance_m: 650 # ~909 of 2,317 cells have a sensor within this
+  # Foot-traffic confidence bands (§10.4). A cell with NO sensor in range is
+  # 'insufficient' (no row written). Otherwise, by nearest-sensor distance
+  # and count:
+  confidence_high_max_nearest_m: 200
+  confidence_high_min_sensors: 3
+  confidence_medium_max_nearest_m: 450 # else 'low' (450–650 m)

@@ -35,12 +35,21 @@ class DayType(BaseModel):
     isodows: list[int]  # 1=Mon .. 7=Sun
 
 
+class Interpolation(BaseModel):
+    decay_distance_m: float
+    max_sensor_distance_m: float
+    confidence_high_max_nearest_m: float
+    confidence_high_min_sensors: int
+    confidence_medium_max_nearest_m: float
+
+
 class PedestrianConfig(BaseModel):
     version: str
     timezone: str
     trailing_months: int
     dayparts: list[Daypart]
     day_types: list[DayType]
+    interpolation: Interpolation
 
     @model_validator(mode="after")
     def _no_overlaps(self) -> PedestrianConfig:

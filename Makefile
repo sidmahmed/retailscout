@@ -52,6 +52,9 @@ build-features:   ## Compute business/competition features into analytics.locati
 build-ped-baselines: ## Compute per-sensor pedestrian daypart baselines
 	cd jobs && uv run python -m retailscout_jobs.cli build-pedestrian-baselines
 
+build-ped-features: ## Interpolate sensor baselines to grid cells (needs baselines first)
+	cd jobs && uv run python -m retailscout_jobs.cli build-pedestrian-features
+
 # --- Frontend -------------------------------------------------------------
 
 fe-dev:

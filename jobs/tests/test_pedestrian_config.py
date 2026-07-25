@@ -6,6 +6,14 @@ import pytest
 
 from retailscout_jobs.pedestrian_config import PedestrianConfig, load_pedestrian_config
 
+_INTERP = {
+    "decay_distance_m": 250,
+    "max_sensor_distance_m": 650,
+    "confidence_high_max_nearest_m": 200,
+    "confidence_high_min_sensors": 3,
+    "confidence_medium_max_nearest_m": 450,
+}
+
 
 def test_real_config_resolves():
     c = load_pedestrian_config()
@@ -30,6 +38,7 @@ def test_overlapping_dayparts_rejected():
                     {"name": "b", "start_hour": 10, "end_hour": 14},
                 ],
                 "day_types": [{"name": "weekday", "isodows": [1]}],
+                "interpolation": _INTERP,
             }
         )
 
@@ -46,6 +55,7 @@ def test_overlapping_day_types_rejected():
                     {"name": "x", "isodows": [1, 2]},
                     {"name": "y", "isodows": [2, 3]},
                 ],
+                "interpolation": _INTERP,
             }
         )
 
