@@ -32,6 +32,7 @@ from . import (
     municipal_boundary,
     pedestrian_hourly,
     pedestrian_sensor,
+    transport_stop,
 )
 
 LoaderFn = Callable[[Connection, Path, int], int]
@@ -42,4 +43,5 @@ LOADERS: dict[str, LoaderFn] = {
     "pedestrian_hourly": pedestrian_hourly.load,
     "business_establishments": business_establishment.load,
     "development_activity": development_project.load,
+    "ptv_gtfs": transport_stop.load,
 }

@@ -124,9 +124,35 @@ and multi-schema layouts do not autogenerate well). Run with
      `town_planning_application` are stored in `raw_attributes jsonb`
      as real JSON numbers/strings, not stringified. See
      `jobs/tests/test_transform_development_project.py`.
-   **Remaining loader is a separate future unit**: GTFS `stops.txt`
-   (nested inside two zip levels — see `jobs/registry/sources.yaml`'s
-   `ptv_gtfs` entry).
+   - `transport_stop.py` — the most structurally complex loader: the
+     PTV GTFS archive is a zip of numbered mode-folders, each holding
+     its own inner `google_transit.zip` with a standard `stops.txt`.
+     Mode per folder number (`FOLDER_TO_MODE`) was determined by
+     inspecting each bundle's real `routes.txt` `route_type` and route
+     names (e.g. folder 2's routes include "Alamein - City" at
+     `route_type=400` → metro train; folder 10 is "The Overland" at
+     `route_type=102` → long-distance train) — documented per-folder
+     in the module docstring, not guessed. Statewide GTFS has ~31,973
+     stops; this loader filters to boardable stop/platform records
+     (`location_type` `''`/`'0'`, excluding station/entrance/node
+     rows) within `core.municipal_boundary` + 1km (a cheap Python
+     bbox pre-filter, then a precise `ST_DWithin` prune in SQL),
+     leaving 1,300 real stops. A stop_id CAN collide across mode
+     bundles — confirmed empirically: all 60 real regional-train stops
+     in range share identical stop_ids with metro-train stops at the
+     same physical platforms (Flinders St, Southern Cross, etc.).
+     `core.transport_stop` has one `mode` column, so collisions
+     resolve deterministically by a fixed, documented processing order
+     ending in `tram`/`metro_train` (the modes that define CBD access,
+     this product's initial scope) — verified both against the real
+     archive and with a dedicated collision test. Full-table-replace
+     on every load, since this loader owns the whole table. See
+     `jobs/tests/test_transform_transport_stop.py`.
+   **All six core loaders are now implemented and verified against
+   real data.** Cross-referencing: municipal boundary ← used by both
+   the FR-02 boundary check tests and the transport_stop filter;
+   pedestrian sensors ← all 134 confirmed inside the boundary;
+   transport stops ← all 1,300 confirmed inside the boundary + 1km.
 4. `0004` — `analytics` schema: `analysis_cell`, `location_feature`
    (PK `(cell_id, feature_version)`), `location_score`
    (PK `(cell_id, business_profile, score_version)`), plus the

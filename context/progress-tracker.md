@@ -4,21 +4,28 @@ Update this file after every meaningful implementation change.
 
 ## Current Phase
 
-- Phase 1 (data foundation) underway. Provenance tracking (`0002`),
-  the `core` schema (`0003`), and five of six core loaders
-  (`municipal_boundary`, `pedestrian_sensor_locations`,
+- Phase 1 (data foundation) core loading is COMPLETE. Provenance
+  tracking (`0002`), the `core` schema (`0003`), and all six core
+  loaders (`municipal_boundary`, `pedestrian_sensor_locations`,
   `pedestrian_hourly`, `business_establishments`,
-  `development_activity`) are live and cross-verified against real
-  data. Only the GTFS `stops.txt` loader remains.
+  `development_activity`, `ptv_gtfs`→`transport_stop`) are live,
+  verified against real data, and cross-checked against each other.
+  Every `core.*` table defined in migration 0003 is populated with
+  real rows sourced from real, checksummed, provenance-tracked
+  snapshots. Ready to move into Phase 1→2 bridge work (hex grid) or
+  Phase 2 (feature/scoring engine) proper.
 
 ## Current Goal
 
-- Finish the loader set: GTFS `stops.txt` → `core.transport_stop`
-  (nested inside two zip levels — profile the real archive before
-  writing code, per the established pattern for every loader so far).
-  After that, the next Phase 1→2 bridge item is the analysis hex grid
-  clipped to `core.municipal_boundary` (resolution decision — open
-  question below — must be settled first).
+- Generate the analysis hex grid clipped to `core.municipal_boundary`
+  (resolution decision — open question below — must be settled
+  first). This needs `h3` or PostGIS-generated hexagons —
+  `geopandas`/`shapely`/`h3` are not yet in `jobs/pyproject.toml`
+  (deliberately deferred until a loader needed real geometric
+  computation beyond PostGIS pass-through; the GTFS loader's boundary
+  filter used pure PostGIS + a Python bbox pre-filter, so it still
+  didn't need them — this may finally be the one that does, or H3's
+  Python bindings may be enough on their own).
 
 ## Completed
 
@@ -202,8 +209,35 @@ Update this file after every meaningful implementation change.
   `development_project`'s ~30 wide numeric attribute columns are
   stored in `raw_attributes jsonb` as real JSON numbers, confirmed
   decimal-free across the whole file first. 8 new tests (32 total in
-  jobs/, up from 25). Only the GTFS `stops.txt` loader remains from
-  the original core-schema loader set.
+  jobs/, up from 25).
+- Loader: PTV GTFS `stops.txt` → `core.transport_stop` (2026-07-25) —
+  the last of the six core loaders, and the most structurally
+  complex: the archive is a zip of numbered mode-folders, each holding
+  its own inner `google_transit.zip`. Determined which folder is which
+  transport mode by inspecting each real bundle's `routes.txt`
+  `route_type` + actual route names (documented per-folder in the
+  loader's docstring — e.g. folder 10 is "The Overland" at
+  `route_type=102`), since `agency.txt` is uninformative (always just
+  "Transport Victoria"). Filtered statewide's ~31,973 stops down to
+  1,300 real stops: boardable stop/platform records only (excludes
+  station/entrance/generic-node rows), within `core.municipal_boundary`
+  + 1km (Python bbox pre-filter + precise `ST_DWithin` SQL prune — 0
+  rows failed the precise check afterward, confirming the design).
+  Found and explained a real, non-obvious empirical fact rather than
+  guessing at it: a stop_id CAN repeat across mode bundles — ALL 60
+  real regional-train stops in range share identical stop_ids with
+  metro-train stops (same physical platforms at Flinders St, Southern
+  Cross, etc.), which is why `regional_train` shows 0 rows in the
+  final loaded set even though 220 candidate rows existed pre-filter —
+  not a bug, a deterministic and now-tested consequence of the
+  documented bundle-processing order (rail modes processed last, so
+  they win any collision, matching this product's CBD-focused scope).
+  5 new tests (37 total in jobs/, up from 32), including one that
+  specifically proves the collision-resolution order.
+  **All six core loaders defined in migration 0003 are now implemented
+  and verified against real data.** Cross-checks hold across the whole
+  set: 134 sensors and 1,300 transport stops both confirmed inside the
+  loaded municipal boundary.
 
 ### Data validation findings
 
@@ -306,18 +340,18 @@ Each item is one unit of work (ai-workflow-rules.md). In order:
    `sources.yaml` when answered. (Transport archives: resolved via
    adopt; only the live-feed question remains open.) — deprioritized
    per user 2026-07-25, revisit before beta/attribution work.
-2. Loader: GTFS `stops.txt` → `core.transport_stop` (nested inside two
-   zip levels — see `jobs/registry/sources.yaml`'s `ptv_gtfs` entry;
-   `mode` must be derived from the numbered folder, not a native GTFS
-   column; filter stops to municipal boundary + ~1km buffer rather
-   than loading the full statewide set).
-3. Generate the analysis hex grid clipped to the municipal boundary
+2. Generate the analysis hex grid clipped to the municipal boundary
    (resolution decision — open question below — must be settled
    first; `core.municipal_boundary` is now loaded and ready to clip
    against). This needs `h3` or PostGIS-generated hexagons —
    `geopandas`/`shapely`/`h3` are not yet added to `jobs/pyproject.toml`
    (deliberately deferred until a loader needed real geometric
-   computation — this is that loader).
+   computation — this is that loader, now that all six core loaders
+   are done and none of them needed it).
+3. Once the grid exists: start Phase 2 feature-building against it
+   (catchments, pedestrian daypart aggregates, business-mix summaries)
+   per architecture.md §§10-14 — the first real consumer of everything
+   loaded in this phase.
 
 ## Definition of Done for any unit (copy of ai-workflow-rules.md gate)
 
