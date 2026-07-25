@@ -4,6 +4,7 @@
     python -m retailscout_jobs.cli ingest <source_id>
     python -m retailscout_jobs.cli adopt <source_id> --retrieved-date YYYY-MM-DD \
         --note "where these files came from" FILE [FILE...]
+    python -m retailscout_jobs.cli load <source_id>
     python -m retailscout_jobs.cli freshness <source_id>
 
 `ingest` downloads a full export and writes an immutable raw snapshot
@@ -11,10 +12,14 @@ under RAW_DATA_DIR. `adopt` does the same for operator-provided files
 when a source's upstream feed is unusable (status: manual). Both then
 record provenance (source.dataset / source.dataset_release /
 source.ingestion_run — see db/migrations/versions/0002) via
-DATABASE_DIRECT_URL. Neither parses file contents or loads staging
-tables — that is a separate pipeline stage (transform/), keeping
-"copy the bytes", "record what was copied", and "interpret the bytes"
-independently re-runnable.
+DATABASE_DIRECT_URL. Neither parses file contents.
+
+`load` reads the most recent source.dataset_release for a source and
+upserts it into its core.* table via the registered loader in
+transform/ (see db/migrations/versions/0003). It requires `ingest`/
+`adopt` to have run first — "copy the bytes", "record what was
+copied", and "interpret the bytes" are independently re-runnable
+pipeline stages by design.
 """
 
 from __future__ import annotations
@@ -24,6 +29,8 @@ import os
 import sys
 import tempfile
 from pathlib import Path
+
+from sqlalchemy import text
 
 from .opendatasoft import OpenDataSoftClient
 from .registry import SourceDefinition, SourceRegistry, SourceStatus, load_registry
@@ -167,6 +174,48 @@ def cmd_adopt(source_id: str, files: list[str], retrieved_date: str, note: str) 
     return 0
 
 
+def cmd_load(source_id: str) -> int:
+    from .transform import LOADERS
+
+    loader = LOADERS.get(source_id)
+    if loader is None:
+        known = ", ".join(sorted(LOADERS)) or "(none yet)"
+        print(
+            f"REFUSING: no core-schema loader implemented for '{source_id}' yet. "
+            f"Implemented: {known}",
+            file=sys.stderr,
+        )
+        return 2
+
+    from .db import get_engine
+
+    raw_root = _raw_root()
+    engine = get_engine()
+    try:
+        with engine.begin() as conn:
+            release = conn.execute(
+                text(
+                    "SELECT release_id, object_path FROM source.dataset_release "
+                    "WHERE dataset_id = :id ORDER BY retrieved_at DESC LIMIT 1"
+                ),
+                {"id": source_id},
+            ).one_or_none()
+            if release is None:
+                print(
+                    f"REFUSING: no source.dataset_release for '{source_id}' — "
+                    "run `ingest` or `adopt` first.",
+                    file=sys.stderr,
+                )
+                return 2
+            snapshot_dir = raw_root / release.object_path
+            row_count = loader(conn, snapshot_dir, release.release_id)
+    finally:
+        engine.dispose()
+
+    print(f"Loaded {row_count} row(s) into core from {source_id} release#{release.release_id}")
+    return 0
+
+
 def cmd_freshness(source_id: str) -> int:
     registry = load_registry()
     source = registry.get(source_id)
@@ -209,6 +258,10 @@ def main(argv: list[str] | None = None) -> int:
         help="ISO date the operator obtained the files (data provenance, not today)",
     )
     p_adopt.add_argument("--note", required=True, help="Where the files came from")
+    p_load = sub.add_parser(
+        "load", help="Load the most recent raw snapshot for a source into its core.* table"
+    )
+    p_load.add_argument("source_id")
     p_fresh = sub.add_parser("freshness", help="Probe upstream freshness for one source")
     p_fresh.add_argument("source_id")
 
@@ -219,6 +272,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_ingest(args.source_id)
     if args.command == "adopt":
         return cmd_adopt(args.source_id, args.files, args.retrieved_date, args.note)
+    if args.command == "load":
+        return cmd_load(args.source_id)
     if args.command == "freshness":
         return cmd_freshness(args.source_id)
     return 1

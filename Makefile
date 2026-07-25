@@ -2,7 +2,7 @@
 # Every target is safe to run repeatedly. See README.md for prerequisites.
 
 .PHONY: db-up db-down db-migrate db-revision api-dev api-test api-lint \
-        jobs-test jobs-lint ingest fe-dev fe-build contracts check
+        jobs-test jobs-lint ingest load fe-dev fe-build contracts check
 
 # --- Database -------------------------------------------------------------
 
@@ -39,6 +39,9 @@ jobs-lint:
 
 ingest:           ## Ingest one source to data/raw/: make ingest SOURCE=<id from sources.yaml>
 	cd jobs && uv run python -m retailscout_jobs.cli ingest $(SOURCE)
+
+load:             ## Load the latest raw snapshot into core.*: make load SOURCE=<id>
+	cd jobs && uv run python -m retailscout_jobs.cli load $(SOURCE)
 
 # --- Frontend -------------------------------------------------------------
 

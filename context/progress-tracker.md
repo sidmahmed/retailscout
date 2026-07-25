@@ -4,15 +4,16 @@ Update this file after every meaningful implementation change.
 
 ## Current Phase
 
-- Phase 1 (data foundation) underway. Source-provenance tracking
-  (migration `0002`) is live end to end; every raw snapshot is now
-  traceable in the database, not just on disk.
+- Phase 1 (data foundation) underway. Provenance tracking (`0002`) and
+  the `core` schema (`0003`) both live; the municipal boundary is
+  loaded and FR-02 containment checks are verified correct against it.
 
 ## Current Goal
 
-- Migration `0003` — `core` schema tables, then the first staging→core
-  loader (start with `municipal_boundary`, since everything spatial
-  depends on it).
+- Build the next staging→core loader: `pedestrian_sensor_locations`
+  (small, straightforward — good next step before tackling the 1.6M-row
+  `pedestrian_hourly` loader, which needs streaming CSV + the
+  synthetic-id gotcha noted in `db/README.md`).
 
 ## Completed
 
@@ -93,6 +94,47 @@ Update this file after every meaningful implementation change.
   unique key) is why that pattern is now load-bearing, not decorative.
   CI: `jobs-worker` job gained its own postgres service + migration
   step so these tests run in CI, not just locally.
+- Full bulk ingest (2026-07-25): every `status: active` source in
+  the registry now has a real raw snapshot with recorded provenance —
+  all 13 active sources plus the `manual`-status `transport_activity`
+  archives (14 total `source.dataset_release` rows). Total ~720 MB
+  across `data/raw/` (largest: `ptv_gtfs` 273 MB, `transport_activity`
+  211 MB, `pedestrian_hourly` 117 MB, `business_establishments` 75 MB).
+  Caught and fixed a gap in the process along the way:
+  `pedestrian_hourly` — the largest and most important dataset — had
+  only ever been sample-queried during Phase 0 validation, never
+  actually ingested; it was missing from both the "done" and "still
+  pending" lists in this file's previous revision. Cross-checked the
+  full registry's `ingestable()` set against `source.dataset_release`
+  after this run to confirm no other source was silently skipped.
+- Migration `0003` — `core` schema + first loader (2026-07-25): all 6
+  core tables created (`municipal_boundary`, `pedestrian_sensor`,
+  `pedestrian_observation`, `business_establishment`,
+  `development_project`, `transport_stop`); column types informed by
+  inspecting the real raw snapshots, not guessed (e.g. confirmed
+  `geo_shape` geometry is `MultiPolygon` before writing the DDL).
+  Built and verified the first staging→core loader,
+  `transform/municipal_boundary.py` (via PostGIS's
+  `ST_GeomFromGeoJSON`, no geopandas/shapely needed for this one):
+  loaded geometry has the correct real area (37.66 km² — matches the
+  actual City of Melbourne), and `ST_Contains` correctly includes
+  Bourke Street Mall and excludes the Richmond golden-location control
+  point, i.e. **FR-02's boundary check is now backed by real, verified
+  data**, not just a schema. `jobs/tests/test_transform_municipal_boundary.py`
+  adds 3 tests (19 total in jobs/, up from 16); idempotent re-load
+  confirmed both manually and by test.
+  Discovered and documented in `jobs/registry/sources.yaml`: every CSV
+  export from this provider is **semicolon-delimited with a UTF-8
+  BOM** (not comma) — undocumented by OpenDataSoft, found by opening
+  the actual files. Also documented for the next loader unit:
+  `pedestrian_hourly`'s `id` column is a synthetic composite
+  (location_id+hourday+date), not a stable key — must build
+  `observed_at` from `sensing_date`+`hourday` instead.
+  Remaining core loaders (`pedestrian_sensor_locations`,
+  `pedestrian_hourly`, `business_establishments`,
+  `development_activity`, GTFS `stops.txt`) are deliberately separate
+  future units — see `db/README.md`'s roadmap entry for ordering and
+  per-source gotchas.
 
 ### Data validation findings
 
@@ -193,20 +235,18 @@ Each item is one unit of work (ai-workflow-rules.md). In order:
 1. Manually verify the remaining source blocker: pedestrian
    hourly-counts licence (portal page / council contact). Update
    `sources.yaml` when answered. (Transport archives: resolved via
-   adopt; only the live-feed question remains open.)
-2. Run `make ingest` for every remaining `status: active` source to
-   produce a full local raw snapshot set with provenance recorded
-   (`pedestrian_sensor_locations`, `transport_activity`, `ptv_gtfs`
-   already done — `business_establishments`, `cafe_seats`,
-   `employment_by_block`, `establishments_per_block`, `clue_blocks`,
-   `development_activity`, `pedestrian_network`, `parking_bays`,
-   `parking_bay_sensors`, `municipal_boundary` still pending).
-3. Migration `0003` — `core` tables; first staging→core loader
-   (start: `municipal_boundary`, then `pedestrian_sensor_locations` +
-   `pedestrian_hourly`).
+   adopt; only the live-feed question remains open.) — deprioritized
+   per user 2026-07-25, revisit before beta/attribution work.
+2. Loader: `pedestrian_sensor_locations` → `core.pedestrian_sensor`
+   (small, 134 rows — good next unit).
+3. Loader: `pedestrian_hourly` → `core.pedestrian_observation`
+   (1.6M rows — needs streaming CSV, semicolon delimiter + BOM,
+   `observed_at` built from `sensing_date`+`hourday`, NOT the `id`
+   column — see `db/README.md` 0003 entry for the full gotcha list).
 4. Generate the analysis hex grid clipped to the municipal boundary
    (resolution decision — open question below — must be settled
-   first).
+   first; `core.municipal_boundary` is now loaded and ready to clip
+   against).
 
 ## Definition of Done for any unit (copy of ai-workflow-rules.md gate)
 

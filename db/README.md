@@ -39,13 +39,37 @@ and multi-schema layouts do not autogenerate well). Run with
    `sha256`/`row_count` columns on one table) to accommodate multi-file
    manual-adopt snapshots; the intent (every release is traceable,
    checksummed, and reproducible) is unchanged.
-3. `0003` — `core` schema: `pedestrian_sensor`,
-   `pedestrian_observation` (PK `(sensor_id, observed_at)`),
-   `business_establishment` (with `valid_from`/`valid_to`),
-   `development_project`, `transport_stop`.
-   Reference DDL: `database-architecture.md` §"Core tables".
-   Use the **actual** council field names documented in
-   `jobs/registry/sources.yaml` when mapping.
+3. `0003` ✔ `core` schema — all 6 tables created:
+   `municipal_boundary`, `pedestrian_sensor`, `pedestrian_observation`
+   (PK `(sensor_id, observed_at)`, deliberately no FK to
+   `pedestrian_sensor` — historical sensor_ids can predate the current
+   sensor-locations snapshot), `business_establishment` (no
+   `valid_from`/`valid_to` yet — needs a deliberate cross-year identity
+   strategy first, see the migration file's docstring),
+   `development_project` (wide/variable numeric attributes kept in a
+   `raw_attributes jsonb` column rather than ~35 speculative typed
+   columns), `transport_stop` (shaped for PTV GTFS `stops.txt`, not
+   the deferred council datasets). Column types are informed by
+   inspecting the real 2026-07-25 snapshots, not guessed — see the
+   migration file's docstring for specifics per table.
+   **Only one loader is implemented so far**:
+   `jobs/retailscout_jobs/transform/municipal_boundary.py`, wired via
+   `cli.py load <source_id>` and registered in `transform/__init__.py`
+   `LOADERS`. Verified against live PostGIS: loaded geometry has the
+   correct real-world area (37.66 km², matches the actual City of
+   Melbourne), and `ST_Contains` correctly includes a CBD point and
+   excludes an outside-boundary point (the golden-locations FR-02
+   control) — see `jobs/tests/test_transform_municipal_boundary.py`.
+   **Remaining loaders are separate future units**, roughly in this
+   order: `pedestrian_sensor_locations` (small, straightforward),
+   `pedestrian_hourly` (1.6M rows — needs streaming CSV, not a full
+   in-memory parse; CSV is semicolon-delimited with a UTF-8 BOM, see
+   `jobs/registry/sources.yaml` header comment; `id` column is a
+   synthetic composite of location_id+hourday+date, NOT a stable key —
+   build `observed_at` from `sensing_date` + `hourday` instead and use
+   `(sensor_id, observed_at)` as the real key), `business_establishments`,
+   `development_activity`, then GTFS `stops.txt` (nested inside two
+   zip levels — see `jobs/registry/sources.yaml`'s `ptv_gtfs` entry).
 4. `0004` — `analytics` schema: `analysis_cell`, `location_feature`
    (PK `(cell_id, feature_version)`), `location_score`
    (PK `(cell_id, business_profile, score_version)`), plus the

@@ -16,11 +16,25 @@
 #             over ~10k rows: /records caps at limit=100, offset<10000.
 #   records — paginated /records queries; only for small tables or
 #             incremental/metadata checks.
+#   http_file — plain HTTP(S) download outside the OpenDataSoft API
+#             (e.g. PTV GTFS); requires download_url.
 #
 # status:
 #   active      — validated, has data, ingest it
 #   blocked     — exists but unusable today; do NOT build features on it
 #   unvalidated — id resolved but metadata/fields not yet profiled
+#   manual      — API feed unusable; data comes from `cli adopt`, not `ingest`
+#   deferred    — deliberately not used (superseded); do not ingest
+#
+# CSV EXPORT FORMAT (confirmed 2026-07-25 across every csv export_format
+# source actually downloaded — pedestrian_hourly, business_establishments,
+# cafe_seats, development_activity, parking_bays): every export_format:
+# csv file from this provider's /exports/csv is SEMICOLON-delimited
+# (not comma) and starts with a UTF-8 BOM. Any csv loader must open with
+# encoding="utf-8-sig" and csv.reader(..., delimiter=";"), or every
+# field will silently land in one column. This is NOT documented by
+# OpenDataSoft anywhere — it was only discovered by opening the actual
+# files while building the core-schema loaders (db/README.md 0003).
 
 version: 1
 provider_defaults:
