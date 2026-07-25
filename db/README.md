@@ -367,10 +367,60 @@ and multi-schema layouts do not autogenerate well). Run with
     nearby sensors' [31, 3101] median range. 7 new tests (85 total in
     jobs/, up from 78): exact decay weighting, each confidence band,
     insufficient→no row, unlocated-sensor exclusion.
-12. `0012` — remaining `analytics.location_feature` columns (development)
-    + `analytics.location_score`
-    (PK `(cell_id, business_profile, score_version)`), created with the
-    scoring engine, which reads the business/transport/worker columns
-    plus `cell_pedestrian_daypart`.
+12. `0012` ✔ `analytics.location_score` — the scoring engine's output
+    (§15), deterministic and versioned (ADR-003, no ML). Keyed
+    `(release_id, cell_id, business_profile, score_version)` with an FK
+    to `analysis_cell` (established deviation from the doc's
+    `(cell_id, business_profile, score_version)` — a release owns its
+    scores too, ADR-004). Stores every component score
+    (`foot_traffic`/`worker_demand`/`competition`/`transport`/
+    `development`), `total_score`, and a `confidence_score` kept
+    SEPARATE from suitability (§15.3), plus an API-shaped `explanation`
+    jsonb matching §17.3's response contract (component key/score/
+    weight/evidence + confidence band/reasons) so the runtime API
+    serves evidence with zero recomputation (invariant 5, 6).
+    `development_score` is always NULL — no growth-pipeline feature
+    exists yet (reweighted out of every score, invariant 4).
+
+    Method, in `jobs/retailscout_jobs/scoring/score.py`
+    (`build_scores`), via `cli.py build-scores` / `make build-scores`
+    (needs grid + all feature loaders + pedestrian baselines/features
+    run first): one raw metric per component (weekday pedestrian
+    estimate; `jobs_800m`; café+takeaway competitor count; total transit
+    stops), each normalised to a robust WITHIN-CITY 0-100 percentile via
+    `percent_rank()` (§15.2) — competition is INVERTED (fewer nearby
+    competitors scores higher; a v1 simplification, §11.2's
+    cluster-strength nuance deferred). Weighted per business profile
+    (`jobs/registry/score_profiles.yaml`, invariant 8 — 4 profiles,
+    weights sum to 100, starting hypotheses per §15.4, not yet
+    golden-location-validated) and averaged over PRESENT components
+    only: a missing component (development always; foot_traffic where
+    pedestrian data is insufficient) is reweighted out of numerator AND
+    denominator (§15.5), never treated as 0 — verified directly (see
+    below), this is the single most important correctness property of
+    the engine. Confidence score comes from the cell's weekday/lunch
+    foot-traffic confidence band via a versioned lookup
+    (`confidence_scores` in the same config).
+
+    Verified against live PostGIS: 9,268 rows (2,317 cells × 4
+    profiles), 0 out-of-[0,100] scores. Cross-checked against every
+    `tests/golden_locations/golden_locations.yaml` control point — ranks
+    correctly end to end: Bourke St Mall/Degraves St/Flinders St
+    (expect very_high) scored 77.6/76.6/74.6; QVM/Southbank (expect
+    high) 65.9/74.6; Lygon St/Parkville (expect medium) 55.7/49.7; Royal
+    Botanic edge/West Melbourne residential (expect low) 38.1/46.6; the
+    outside-boundary control correctly has NO containing cell. Bourke St
+    Mall's own breakdown demonstrates the model working as intended, not
+    just producing a plausible number: foot traffic 99.6, workers 99.6,
+    transport 98.4, but competition 0.0 (548 café/takeaway competitors
+    within 400 m — the most saturated market in the city), for a total
+    of 77.2 — high but not maximal, correctly reflecting real saturation
+    risk rather than only rewarding raw activity. Hit and fixed the same
+    Postgres typing gotcha as 0011 (`round(double precision, n)` doesn't
+    exist; cast to `::numeric`). 9 new tests (94 total in jobs/, up from
+    85): a hand-built 4-cell synthetic release with exact expected
+    percentiles proves the reweighting-not-zeroing property precisely,
+    confirms competition inversion, per-profile weight divergence, and
+    the API-shaped explanation structure.
 13. `0013` — `app` schema: `project`, `saved_location`.
 14. `0014` — `audit` schema: `score_request`, `data_quality_result`.

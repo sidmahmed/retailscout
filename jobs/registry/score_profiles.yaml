@@ -1,0 +1,47 @@
+# Scoring configuration (§15). Deterministic, versioned, profile-weighted
+# — no ML (ADR-003). `version` is stamped on every analytics.location_score
+# row as score_version. Weights are STARTING HYPOTHESES (§15.4) that need
+# golden-location validation before sign-off, and live here (invariant 8),
+# never hard-coded.
+
+version: v1
+
+# Component weights per business profile, over the five scored components.
+# Each profile's weights sum to 100. A component that is missing for a cell
+# (development everywhere — no feature yet; or foot_traffic where pedestrian
+# data is insufficient) is reweighted OUT of both numerator and denominator
+# (§15.5 "reweight only when enough evidence remains"), never treated as 0.
+profiles:
+  cafe:
+    foot_traffic: 30
+    worker_demand: 20
+    competition: 20
+    transport: 20
+    development: 10
+  retail:
+    foot_traffic: 30
+    worker_demand: 10
+    competition: 20
+    transport: 20
+    development: 20
+  food_truck:
+    foot_traffic: 35
+    worker_demand: 20
+    competition: 15
+    transport: 20
+    development: 10
+  pop_up:
+    foot_traffic: 30
+    worker_demand: 15
+    competition: 20
+    transport: 20
+    development: 15
+
+# Numeric confidence score per foot-traffic confidence band (§10.4/§15.3).
+# 'insufficient' also covers a cell with no pedestrian estimate at all.
+# Confidence is exposed SEPARATELY from suitability, never blended in.
+confidence_scores:
+  high: 85
+  medium: 60
+  low: 35
+  insufficient: 15

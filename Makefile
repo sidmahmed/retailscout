@@ -55,6 +55,9 @@ build-ped-baselines: ## Compute per-sensor pedestrian daypart baselines
 build-ped-features: ## Interpolate sensor baselines to grid cells (needs baselines first)
 	cd jobs && uv run python -m retailscout_jobs.cli build-pedestrian-features
 
+build-scores:     ## Compute per-cell profile suitability scores (needs features first)
+	cd jobs && uv run python -m retailscout_jobs.cli build-scores
+
 # --- Frontend -------------------------------------------------------------
 
 fe-dev:

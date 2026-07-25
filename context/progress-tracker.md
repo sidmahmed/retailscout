@@ -15,20 +15,30 @@ Update this file after every meaningful implementation change.
 
 ## Current Goal
 
-- PEDESTRIAN DEMAND is COMPLETE: step 1 sensor baselines
-  (`sensor_daypart_baseline`, 0010) + step 2 cell interpolation
-  (`cell_pedestrian_daypart`, 0011, distance-decay + confidence bands).
-  All planned feature families now exist: business, transport, worker
-  (on `location_feature`), and pedestrian (its own two tables). NEXT:
-  the SCORING ENGINE (§15) — `analytics.location_score` + a
-  deterministic, versioned, profile-weighted score per cell that reads
-  all the feature families, normalises each to a percentile/robust
-  scale, applies the four profiles' weights (café/retail/food-truck/
-  pop-up), and exposes component scores + a SEPARATE confidence band
-  (never blended). Then golden-location evaluation
-  (`tests/golden_locations/`). This is a large unit; likely split
-  (normalisation + score table + a couple of profiles first, then
-  explainability/drivers).
+- THE SCORING ENGINE IS LIVE (migration 0012, `analytics.location_score`)
+  — Phase 2's core deliverable. All 2,317 cells scored for all 4
+  business profiles, cross-checked against every golden-location control
+  point and ranking correctly end to end (see Completed). This is
+  arguably the first "whole product" milestone: every phase-1/2 data
+  source, feature, and the scoring formula now connect end to end from
+  raw council data to a suitability number with evidence.
+
+  NEXT — two remaining Phase-2-adjacent items before Phase 3
+  (product API/frontend) can properly start:
+  1. Formalise `tests/golden_locations/golden_locations.yaml` from
+     `version: 0` (approximate coords, qualitative-only) to `version: 1`
+     — snap each point to its real analysis cell, verify precinct
+     placement, and turn the now-observed real scores into an automated
+     regression test (a `pytest` that runs `build_scores` and asserts
+     each location's ordering/band holds) — §20.3/§21.2's actual
+     purpose, not just a manual eyeball check.
+  2. `backend/`'s `/api/v1/locations/score` is still a 501 stub
+     (deliberately, per Session Notes) — it can now be implemented for
+     real: read `analytics.location_score` + `analytics.analysis_cell`
+     for a point/profile and return the real `ScoreResponse` (§17.3),
+     since `explanation` is already stored in the exact shape the
+     contract expects. This is the first Phase 3 unit and the natural
+     next step.
 
 ## Completed
 
@@ -453,6 +463,50 @@ Update this file after every meaningful implementation change.
   mean to `::numeric` first. 7 new tests (85 total in jobs/, up from
   78): exact decay weighting, each confidence band, insufficient→no
   row, unlocated-sensor exclusion.
+- Migration `0012` + the scoring engine (2026-07-25) — §15,
+  deterministic/versioned/no-ML (ADR-003), Phase 2's core deliverable.
+  `analytics.location_score` (keyed `(release_id, cell_id,
+  business_profile, score_version)`, FK to `analysis_cell` — same
+  release-owns-its-artifacts pattern as `location_feature`) +
+  `jobs/retailscout_jobs/scoring/score.py` (`build_scores`), via
+  `cli.py build-scores` / `make build-scores`. One raw metric per
+  component (weekday pedestrian estimate, `jobs_800m`, café+takeaway
+  competitor count, total transit stops), each normalised to a robust
+  WITHIN-CITY percentile via `percent_rank()` (§15.2); competition
+  INVERTED (fewer competitors scores higher, §11.2's cluster-strength
+  nuance deferred). Weighted per business profile
+  (`jobs/registry/score_profiles.yaml`, invariant 8 — 4 profiles,
+  weights sum to 100, starting hypotheses per §15.4) and averaged over
+  PRESENT components only: a missing component (development always — no
+  growth-pipeline feature yet; foot_traffic where pedestrian data is
+  insufficient) is reweighted OUT of numerator and denominator (§15.5),
+  never treated as 0 — verified directly with an exact synthetic-cell
+  test, the single most important correctness property here.
+  Confidence is a SEPARATE score from suitability (§15.3), derived from
+  the cell's foot-traffic confidence band via a versioned lookup. Every
+  row's `explanation` jsonb matches §17.3's response contract exactly
+  (component key/score/weight/evidence + confidence band/reasons), so
+  `backend/`'s score endpoint can serve it with zero recomputation
+  (invariant 5, 6) once implemented.
+  Verified against live PostGIS: 9,268 rows (2,317 cells × 4 profiles),
+  0 out-of-[0,100] scores. **Cross-checked against every golden-location
+  control point and it ranks correctly end to end**: Bourke St
+  Mall/Degraves St/Flinders St (expect very_high) scored
+  77.6/76.6/74.6; QVM/Southbank (expect high) 65.9/74.6; Lygon St/
+  Parkville (expect medium) 55.7/49.7; Royal Botanic edge/West
+  Melbourne residential (expect low) 38.1/46.6; outside-boundary
+  correctly has no containing cell. Bourke St Mall's own breakdown
+  shows the model working as intended: foot traffic 99.6, workers 99.6,
+  transport 98.4, but competition 0.0 (548 café/takeaway competitors
+  within 400 m — genuinely the most saturated market in the city), for
+  a total of 77.2 — high but not maximal, correctly reflecting real
+  saturation risk instead of only rewarding raw activity. Hit and fixed
+  the same Postgres typing gotcha as 0011 (`round(double precision, n)`
+  doesn't exist; cast to `::numeric`). 9 new tests (94 total in jobs/,
+  up from 85): a hand-built 4-cell synthetic release (exact expected
+  percentiles) proves reweighting-not-zeroing precisely, plus
+  competition inversion, per-profile weight divergence, and the
+  API-shaped explanation structure.
 
 ### Data validation findings
 
@@ -573,9 +627,19 @@ Each item is one unit of work (ai-workflow-rules.md). In order:
 6. ~~Pedestrian demand (§10)~~ **DONE 2026-07-25** — step 1 baselines
    (0010) + step 2 interpolation (0011, `cell_pedestrian_daypart`,
    distance-decay + confidence). All feature families now exist.
-7. Scoring engine: `analytics.location_score` + versioned weighted
-   scoring (§15) once enough feature families exist, then
-   golden-location evaluation.
+7. ~~Scoring engine~~ **DONE 2026-07-25** — migration 0012,
+   `analytics.location_score`, verified against every golden-location
+   control point (see Completed). Phase 2's core deliverable is live.
+8. Formalise golden-location evaluation: `golden_locations.yaml`
+   `version: 0` → `1` (snap coords to real cells, verify precinct
+   placement) + an automated `pytest` regression test asserting
+   ordering/bands from a real `build_scores` run (§20.3/§21.2) — turns
+   the manual eyeball check just done into a repeatable release gate.
+9. Phase 3 begins: implement `backend/`'s `/api/v1/locations/score`
+   for real (currently a deliberate 501 stub) — read
+   `analytics.location_score` for a point/profile and return it as the
+   published `ScoreResponse` (§17.3); `explanation` is already stored
+   in the exact response shape.
 
 ## Definition of Done for any unit (copy of ai-workflow-rules.md gate)
 
