@@ -19,6 +19,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 
 import { suitabilityTileUrl } from "@/lib/api/client";
 import { useCoverage } from "@/lib/api/hooks";
+import type { SelectedPoint, StagedLocation } from "@/lib/locations";
 import type { BusinessProfile } from "@/lib/api/types";
 import { cssVar, scoreColors } from "@/lib/tokens";
 
@@ -27,14 +28,11 @@ const BASEMAP_STYLE = "https://tiles.openfreemap.org/styles/positron";
 const SOURCE_ID = "suitability";
 const SOURCE_LAYER = "suitability";
 
-export interface SelectedPoint {
-  lat: number;
-  lon: number;
-}
-
 interface Props {
+  activeLocation: StagedLocation | null;
+  focusPoint: SelectedPoint | null;
   profile: BusinessProfile;
-  selected: SelectedPoint | null;
+  staged: StagedLocation[];
   onSelect: (point: SelectedPoint) => void;
 }
 
@@ -55,10 +53,16 @@ function scorePaint(): maplibregl.ExpressionSpecification {
   ];
 }
 
-export function SuitabilityMap({ profile, selected, onSelect }: Props) {
+export function SuitabilityMap({
+  activeLocation,
+  focusPoint,
+  profile,
+  staged,
+  onSelect,
+}: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
-  const markerRef = useRef<maplibregl.Marker | null>(null);
+  const markerRefs = useRef<maplibregl.Marker[]>([]);
   const profileRef = useRef(profile);
   // onSelect via ref so the map isn't torn down when the parent re-renders.
   const onSelectRef = useRef(onSelect);
@@ -167,27 +171,60 @@ export function SuitabilityMap({ profile, selected, onSelect }: Props) {
     );
   }, [coverage]);
 
-  // Selected-point marker: quiet ring in the accent color, not the
-  // default teardrop pin.
+  // Search selections should bring the result into view; ordinary map
+  // clicks already happen in the current viewport and do not recenter.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !focusPoint) return;
+    map.easeTo({
+      center: [focusPoint.lon, focusPoint.lat],
+      zoom: Math.max(map.getZoom(), 15),
+      duration: 700,
+    });
+  }, [focusPoint]);
+
+  // Numbered staged markers anchor comparison columns to the map. A
+  // currently inspected, unstaged location gets an unnumbered ring.
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    markerRef.current?.remove();
-    markerRef.current = null;
-    if (!selected) return;
-    const el = document.createElement("div");
-    el.style.cssText = [
-      "width:18px",
-      "height:18px",
-      "border-radius:9999px",
-      `border:3px solid ${cssVar("--accent-primary")}`,
-      "background:rgba(255,255,255,0.9)",
-      "box-shadow:0 1px 4px rgba(20,24,31,0.35)",
-    ].join(";");
-    markerRef.current = new maplibregl.Marker({ element: el })
-      .setLngLat([selected.lon, selected.lat])
-      .addTo(map);
-  }, [selected]);
+    markerRefs.current.forEach((marker) => marker.remove());
+    const activeIsStaged = staged.some(
+      (location) => location.id === activeLocation?.id,
+    );
+    const visibleLocations =
+      activeLocation && !activeIsStaged ? [...staged, activeLocation] : staged;
+
+    markerRefs.current = visibleLocations.map((location) => {
+      const stagedIndex = staged.findIndex(
+        (candidate) => candidate.id === location.id,
+      );
+      const active = location.id === activeLocation?.id;
+      const size = active ? 25 : 21;
+      const el = document.createElement("div");
+      el.textContent = stagedIndex >= 0 ? String(stagedIndex + 1) : "";
+      el.setAttribute(
+        "aria-label",
+        stagedIndex >= 0 ? `Location ${stagedIndex + 1}` : "Selected location",
+      );
+      el.style.cssText = [
+        `width:${size}px`,
+        `height:${size}px`,
+        "display:flex",
+        "align-items:center",
+        "justify-content:center",
+        "border-radius:9999px",
+        `border:${active ? 3 : 2}px solid var(--accent-primary)`,
+        "background:var(--bg-surface)",
+        "color:var(--accent-primary)",
+        "font:600 10px var(--font-sans)",
+        "box-shadow:0 1px 4px color-mix(in srgb, var(--text-primary) 35%, transparent)",
+      ].join(";");
+      return new maplibregl.Marker({ element: el })
+        .setLngLat([location.point.lon, location.point.lat])
+        .addTo(map);
+    });
+  }, [activeLocation, staged]);
 
   // Inline style, not Tailwind classes: maplibre-gl.css is unlayered and
   // its .maplibregl-map { position: relative } beats Tailwind's layered

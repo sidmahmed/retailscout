@@ -18,6 +18,8 @@ the patterns to copy, and what remains — in priority order. Read
 | Legend | `frontend/components/map/MapLegend.tsx` | same tokens as the tile ramp |
 | Score drawer | `frontend/components/scoring/ScoreDrawer.tsx` | §18.3 FIXED evidence order — never reorder; includes the daypart chart; null component score renders "Not computed", never 0 (invariant 4) |
 | Daypart chart | `frontend/components/charts/DaypartChart.tsx` | Weekday/Saturday/Sunday tabs over modelled hourly estimates; sensor confidence remains separate |
+| Comparison tray | `frontend/components/locations/ComparisonTray.tsx` | Desktop-only comparison bench after 2+ map selections; selection-order columns pair percentiles with raw evidence |
+| Location search | `frontend/components/locations/LocationSearch.tsx` | Explicit-submit Nominatim search bounded to API coverage; selecting a result recentres the map and opens details |
 | Score bar / badge | `frontend/components/scoring/{ScoreBar,ConfidenceBadge}.tsx` | score palette and confidence palette are separate systems — never substitute |
 | Shell | `frontend/app/{layout,providers,page}.tsx` | Inter via next/font; QueryClientProvider; map is `dynamic(..., {ssr:false})` |
 
@@ -49,32 +51,41 @@ bar chart in the §18.3 slot with day-type tabs, confidence dots, and the
 raw sensor-count/nearest-sensor evidence. A null series explicitly says
 that the estimate is unavailable; it is never shown as zero.
 
-### 1. Comparison tray (§18.1)
-Stage 2+ selected locations (lift selection state in `app/page.tsx` to a
-list), bottom-docked tray on desktop, side-by-side component columns
-with raw metrics next to percentiles (ui-context.md forbids bare ranked
-lists). React Query cache already holds each fetched score — reuse via
-the same `["score", profile, lat, lon]` keys.
+### Completed: comparison tray (§18.1)
+`app/page.tsx` keeps ordinary map selection separate from the staged
+comparison list: clicking the map only selects/switches the evidence
+drawer, and the drawer's explicit Compare action stages that location.
+Adding the second location opens a mutually exclusive, bottom-docked
+desktop comparison workspace; it never overlaps the detail drawer.
+Selection-order component columns reuse the drawer's React Query score
+keys, every percentile is paired with its raw metric, and locations are
+never auto-ranked. Numbered map markers match the staged columns, which
+can reopen details or be removed individually. Mobile comparison
+remains a separate-screen task per the architecture.
 
-### 2. Search / geocoding
-Top-docked search box. Free option: Nominatim
-(`https://nominatim.openstreetmap.org/search?format=jsonp&viewbox=...`)
-restricted to the coverage bounds from `useCoverage()`; debounce ≥1 s to
-respect their usage policy, or swap in any paid geocoder. On result:
-`setSelected({lat, lon})` — everything downstream already works.
+### Completed: search / geocoding
+The top-docked search uses Nominatim's JSONv2 endpoint, restricted to
+the bounds from `useCoverage()`. It is deliberately explicit-submit,
+not autocomplete (the public service forbids client-side autocomplete),
+rate-limited to ≤1 request/second, cached through React Query for 24
+hours, runtime-validated with zod, and visibly attributed to
+OpenStreetMap. Selecting a result recentres the map and opens that
+location's detail drawer without changing comparison state. Set
+`NEXT_PUBLIC_GEOCODER_URL` to switch to another compatible provider or
+self-hosted Nominatim endpoint.
 
-### 3. Mobile bottom sheet
+### 1. Mobile bottom sheet
 `ScoreDrawer` is already a self-contained panel; on `< sm` render it in
 a bottom-sheet container (e.g. 60dvh, drag handle) instead of the right
 overlay in `app/page.tsx`. Keep the §18.3 order identical.
 
-### 4. Confidence map overlay (§18.2)
+### 2. Confidence map overlay (§18.2)
 A toggle that recolors the fill layer by `confidence_score` using the
 `--confidence-*` tokens (the tile already carries the property — no
 backend change). Implement as a second paint expression swapped with
 `map.setPaintProperty`.
 
-### 5. Raw point layers on zoom (§18.2)
+### 3. Raw point layers on zoom (§18.2)
 Sensors / individual businesses / developments as point layers visible
 only at high zoom. Needs new tile or GeoJSON endpoints — follow the MVT
 pattern in `backend/app/repositories/scores.py::get_suitability_tile`.

@@ -4,6 +4,31 @@ Update this file after every meaningful implementation change.
 
 ## Current Phase
 
+- COVERAGE-BOUNDED LOCATION SEARCH IS LIVE (2026-07-25): the top dock
+  now has explicit-submit address/place search against Nominatim JSONv2,
+  bounded to the municipal coverage box. Results are zod-validated,
+  cached through React Query for 24 hours, rate-limited to one request
+  per second, and visibly attributed to OpenStreetMap. Autocomplete is
+  deliberately absent because the public Nominatim policy forbids it.
+  Selecting a result recentres the map and opens its evidence drawer
+  without mutating the explicit comparison list. The provider endpoint
+  is configurable with `NEXT_PUBLIC_GEOCODER_URL`. TypeScript is green
+  and a real Bourke Street Mall query returned the expected CBD result.
+
+- DESKTOP COMPARISON TRAY IS LIVE (2026-07-25): ordinary map clicks
+  select or switch the evidence drawer without changing comparison
+  state. Comparison is explicit through the drawer's Compare action;
+  adding the second location opens a mutually exclusive bottom-docked
+  workspace, so detail and comparison panels never overlap. Numbered
+  staged markers match side-by-side component columns in selection
+  order (never an implied ranking). Each city-wide percentile sits next
+  to its raw supporting metric, null components remain explicitly "Not
+  computed", and each column can reopen details or be removed. Score
+  requests reuse the existing React Query keys/cache. The mobile
+  separate comparison screen remains deferred as specified in §18.1.
+  Full `make check` is green: 9 backend tests, 104 jobs tests, both
+  Python lint/format gates, and the frontend production build.
+
 - DAYPART FOOT-TRAFFIC CHART IS LIVE (2026-07-25): the score API now
   includes the config-driven `analytics.cell_pedestrian_daypart` series
   that matches the score's calculation time (12 slots for the current

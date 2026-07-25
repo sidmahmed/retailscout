@@ -14,8 +14,10 @@
 
 import {
   AlertTriangle,
+  Check,
   Info,
   MapPinOff,
+  Plus,
   ServerOff,
   TrendingUp,
   X,
@@ -38,7 +40,7 @@ const PROFILE_LABELS: Record<BusinessProfile, string> = {
 };
 
 const EVIDENCE_LABELS: Record<string, string> = {
-  weekday_avg_estimate: "Est. weekday pedestrians/day",
+  weekday_avg_estimate: "Est. weekday pedestrians / hr",
   jobs_800m: "Jobs within 800 m",
   cafe_competitors_400m: "Similar businesses within 400 m",
   transit_stops: "Transit stops nearby",
@@ -81,12 +83,22 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 interface Props {
+  inComparison: boolean;
+  label?: string;
+  onToggleComparison: () => void;
   point: { lat: number; lon: number };
   profile: BusinessProfile;
   onClose: () => void;
 }
 
-export function ScoreDrawer({ point, profile, onClose }: Props) {
+export function ScoreDrawer({
+  inComparison,
+  label = "Selected location",
+  onToggleComparison,
+  point,
+  profile,
+  onClose,
+}: Props) {
   const { data, error, isPending } = useScore(point, profile);
 
   return (
@@ -96,18 +108,43 @@ export function ScoreDrawer({ point, profile, onClose }: Props) {
     >
       <header className="flex items-center justify-between px-5 py-3.5">
         <div>
-          <p className="text-sm font-semibold">Selected location</p>
+          <p className="text-sm font-semibold">{label}</p>
           <p className="numeric text-xs text-[var(--text-muted)]">
             {point.lat.toFixed(5)}, {point.lon.toFixed(5)}
           </p>
         </div>
-        <button
-          onClick={onClose}
-          aria-label="Close panel"
-          className="rounded-md p-1.5 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-surface-muted)] hover:text-[var(--text-primary)]"
-        >
-          <X className="h-5 w-5" strokeWidth={1.5} />
-        </button>
+        <div className="flex items-center gap-1.5">
+          {data && (
+            <button
+              aria-label={
+                inComparison
+                  ? "Remove location from comparison"
+                  : "Add location to comparison"
+              }
+              className={`inline-flex items-center gap-1 rounded-md border px-2 py-1.5 text-xs font-medium transition-colors ${
+                inComparison
+                  ? "border-[var(--accent-primary)] bg-[var(--bg-surface-muted)] text-[var(--accent-primary)]"
+                  : "border-[var(--border-default)] text-[var(--text-muted)] hover:border-[var(--accent-primary)] hover:text-[var(--accent-primary)]"
+              }`}
+              onClick={onToggleComparison}
+              type="button"
+            >
+              {inComparison ? (
+                <Check className="h-3.5 w-3.5" strokeWidth={1.5} />
+              ) : (
+                <Plus className="h-3.5 w-3.5" strokeWidth={1.5} />
+              )}
+              {inComparison ? "Compared" : "Compare"}
+            </button>
+          )}
+          <button
+            onClick={onClose}
+            aria-label="Close panel"
+            className="rounded-md p-1.5 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-surface-muted)] hover:text-[var(--text-primary)]"
+          >
+            <X className="h-5 w-5" strokeWidth={1.5} />
+          </button>
+        </div>
       </header>
 
       <div className="flex-1 overflow-y-auto">

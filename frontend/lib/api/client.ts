@@ -4,8 +4,9 @@
  * at the boundary) and is then returned under the generated OpenAPI
  * types, so components get both runtime safety and static types.
  *
- * Same-origin paths only — next.config.mjs rewrites /api/v1/* to the
- * FastAPI dev server locally and the platform routes it in production.
+ * RetailScout API paths are same-origin — next.config.mjs rewrites
+ * /api/v1/* to FastAPI locally. The one deliberate external call is the
+ * configurable, explicit-submit geocoder at GEOCODER_BASE_URL.
  */
 import { z } from "zod";
 
@@ -15,6 +16,18 @@ import type {
   ProfileInfo,
   ScoreResponse,
 } from "./types";
+
+const GEOCODER_BASE_URL =
+  process.env.NEXT_PUBLIC_GEOCODER_URL ??
+  "https://nominatim.openstreetmap.org/search";
+
+export interface GeocodingResult {
+  id: string;
+  displayName: string;
+  lat: number;
+  lon: number;
+  type: string | null;
+}
 
 /** FR-02: the point is outside the City of Melbourne analysis area. */
 export class OutsideBoundaryError extends Error {
@@ -83,6 +96,27 @@ const coverageSchema = z.object({
   bounds: z.array(z.number()).length(4),
 });
 
+const nominatimResultsSchema = z.array(
+  z.object({
+    place_id: z.union([z.number(), z.string()]),
+    display_name: z.string().min(1),
+    lat: z.coerce.number().min(-90).max(90),
+    lon: z.coerce.number().min(-180).max(180),
+    addresstype: z.string().optional(),
+    type: z.string().optional(),
+  }),
+);
+
+let lastGeocodingRequestAt = 0;
+
+async function respectGeocodingRateLimit(): Promise<void> {
+  const waitMs = Math.max(0, 1000 - (Date.now() - lastGeocodingRequestAt));
+  if (waitMs > 0) {
+    await new Promise((resolve) => window.setTimeout(resolve, waitMs));
+  }
+  lastGeocodingRequestAt = Date.now();
+}
+
 async function detailOf(res: Response): Promise<string> {
   try {
     const body: unknown = await res.json();
@@ -127,6 +161,41 @@ export async function fetchProfiles(): Promise<ProfileInfo[]> {
 export async function fetchCoverage(): Promise<Coverage> {
   const data = await getJson("/api/v1/coverage");
   return coverageSchema.parse(data) as Coverage;
+}
+
+export async function geocodeAddress(
+  query: string,
+  bounds: number[],
+): Promise<GeocodingResult[]> {
+  if (bounds.length !== 4) throw new Error("Coverage bounds are unavailable");
+  const [minLon, minLat, maxLon, maxLat] = bounds;
+  const params = new URLSearchParams({
+    q: query,
+    format: "jsonv2",
+    limit: "5",
+    countrycodes: "au",
+    viewbox: `${minLon},${maxLat},${maxLon},${minLat}`,
+    bounded: "1",
+    layer: "address,poi",
+    "accept-language": "en-AU",
+  });
+
+  await respectGeocodingRateLimit();
+  const response = await fetch(`${GEOCODER_BASE_URL}?${params}`, {
+    headers: { Accept: "application/json" },
+  });
+  if (!response.ok) {
+    throw new Error("Address search is temporarily unavailable");
+  }
+
+  const parsed = nominatimResultsSchema.parse(await response.json());
+  return parsed.map((result) => ({
+    id: String(result.place_id),
+    displayName: result.display_name,
+    lat: result.lat,
+    lon: result.lon,
+    type: result.addresstype ?? result.type ?? null,
+  }));
 }
 
 /** Tile URL template for the MapLibre vector source (layer "suitability",

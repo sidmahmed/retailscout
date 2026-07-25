@@ -12,6 +12,7 @@ import {
   fetchCoverage,
   fetchProfiles,
   fetchScore,
+  geocodeAddress,
 } from "./client";
 import type { BusinessProfile } from "./types";
 
@@ -30,6 +31,20 @@ export function useCoverage() {
     queryKey: ["coverage"],
     queryFn: fetchCoverage,
     staleTime: RELEASE_STALE_MS,
+  });
+}
+
+export function useGeocode(query: string | null, bounds: number[] | undefined) {
+  return useQuery({
+    queryKey: ["geocode", query, bounds?.join(",")],
+    queryFn: () => {
+      if (!query || !bounds) throw new Error("search is not ready");
+      return geocodeAddress(query, bounds);
+    },
+    enabled: query !== null && bounds !== undefined,
+    staleTime: 24 * 60 * 60 * 1000,
+    gcTime: 24 * 60 * 60 * 1000,
+    retry: 1,
   });
 }
 
