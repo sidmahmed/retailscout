@@ -20,11 +20,12 @@ from pathlib import Path
 
 from sqlalchemy.engine import Connection
 
-from . import municipal_boundary, pedestrian_sensor
+from . import municipal_boundary, pedestrian_hourly, pedestrian_sensor
 
 LoaderFn = Callable[[Connection, Path, int], int]
 
 LOADERS: dict[str, LoaderFn] = {
     "municipal_boundary": municipal_boundary.load,
     "pedestrian_sensor_locations": pedestrian_sensor.load,
+    "pedestrian_hourly": pedestrian_hourly.load,
 }

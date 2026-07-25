@@ -4,20 +4,20 @@ Update this file after every meaningful implementation change.
 
 ## Current Phase
 
-- Phase 1 (data foundation) underway. Provenance tracking (`0002`) and
-  the `core` schema (`0003`) both live; municipal boundary and
-  pedestrian sensors are loaded and cross-verified against each other
-  (all 134 sensors fall inside the loaded boundary).
+- Phase 1 (data foundation) underway. Provenance tracking (`0002`),
+  the `core` schema (`0003`), and all three foot-traffic-critical
+  loaders (`municipal_boundary`, `pedestrian_sensor_locations`,
+  `pedestrian_hourly` — the full 1.6M-row dataset) are live and
+  cross-verified against each other and against real known rows.
 
 ## Current Goal
 
-- Build the `pedestrian_hourly` loader (1.6M rows — needs streaming
-  CSV, not a full in-memory parse; semicolon delimiter + UTF-8 BOM;
-  `observed_at` must be built from `sensing_date`+`hourday`, NOT the
-  `id` column, which is a synthetic composite — see `db/README.md`'s
-  0003 entry for the full gotcha list). This is the biggest/riskiest
-  remaining core loader — the smaller ones (`pedestrian_sensor_locations`,
-  `municipal_boundary`) are done specifically to de-risk this one.
+- Generate the analysis hex grid clipped to the loaded
+  `core.municipal_boundary` (resolution decision — open question below
+  — must be settled first). This is the next Phase 1→2 bridge item;
+  the remaining core loaders (`business_establishments`,
+  `development_activity`, GTFS `stops.txt`) can proceed in parallel
+  whenever picked up, but the grid blocks any scoring/feature work.
 
 ## Completed
 
@@ -155,6 +155,30 @@ Update this file after every meaningful implementation change.
   from 19), including one that proves upsert semantics by mutating a
   fixture's status between two loads and checking the change actually
   took effect (not just that the row count stayed put).
+- Loader: `pedestrian_hourly` → `core.pedestrian_observation`
+  (2026-07-25) — the biggest and riskiest core loader, fully loaded:
+  all 1,610,006 rows, ~19s end to end (measured). Profiled the FULL
+  file (not a sample) before writing any code: zero duplicate
+  `(location_id, sensing_date, hourday)` keys (confirms the PK
+  choice), no nulls or negatives in any column used, and — the most
+  important finding — **3 real orphan sensor_ids (28, 65, 78)** appear
+  in this data but not in the currently-loaded 134-sensor snapshot,
+  empirically confirming (not just theoretically justifying) migration
+  0003's decision to skip a FK from `pedestrian_observation` to
+  `pedestrian_sensor`. Timezone handling (local `Australia/Melbourne`
+  hour → UTC via `zoneinfo`) was checked against all 4 real DST
+  transition dates in the file's range before trusting it: spring-
+  forward dates never emit the nonexistent local hour (source already
+  omits it), fall-back dates emit the ambiguous hour exactly once per
+  sensor (source already collapsed it) — so the theoretical PK-
+  collision risk from DST does not materialize in practice. Round-trip
+  verified against a known real row (sensor 109, 2025-01-21 14:00
+  local → 03:00 UTC, count 214) and orphan-sensor rows loaded
+  correctly. Idempotent re-load of the full 1.6M rows confirmed. 4 new
+  tests (25 total in jobs/, up from 21).
+  All 3 foot-traffic-critical loaders (boundary, sensors, hourly
+  observations) are now done and cross-verified — Phase 2's pedestrian
+  demand methodology has real data to work against whenever it starts.
 
 ### Data validation findings
 
@@ -257,14 +281,18 @@ Each item is one unit of work (ai-workflow-rules.md). In order:
    `sources.yaml` when answered. (Transport archives: resolved via
    adopt; only the live-feed question remains open.) — deprioritized
    per user 2026-07-25, revisit before beta/attribution work.
-2. Loader: `pedestrian_hourly` → `core.pedestrian_observation`
-   (1.6M rows — needs streaming CSV, semicolon delimiter + BOM,
-   `observed_at` built from `sensing_date`+`hourday`, NOT the `id`
-   column — see `db/README.md` 0003 entry for the full gotcha list).
-3. Generate the analysis hex grid clipped to the municipal boundary
+2. Generate the analysis hex grid clipped to the municipal boundary
    (resolution decision — open question below — must be settled
    first; `core.municipal_boundary` is now loaded and ready to clip
-   against).
+   against). This needs `h3` or PostGIS-generated hexagons —
+   `geopandas`/`shapely`/`h3` are not yet added to `jobs/pyproject.toml`
+   (deliberately deferred until a loader needed real geometric
+   computation — this is that loader).
+3. Remaining core loaders, any order, none blocking the grid:
+   `business_establishments` → `core.business_establishment`,
+   `development_activity` → `core.development_project`, GTFS
+   `stops.txt` → `core.transport_stop` (nested inside two zip levels
+   — see `jobs/registry/sources.yaml`'s `ptv_gtfs` entry).
 
 ## Definition of Done for any unit (copy of ai-workflow-rules.md gate)
 

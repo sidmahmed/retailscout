@@ -74,13 +74,28 @@ and multi-schema layouts do not autogenerate well). Run with
      scoped out until `pedestrian_hourly` is loaded and the gap
      actually matters. See
      `jobs/tests/test_transform_pedestrian_sensor.py`.
-   **Remaining loaders are separate future units**, roughly in this
-   order: `pedestrian_hourly` (1.6M rows — needs streaming CSV, not a
-   full in-memory parse; CSV is semicolon-delimited with a UTF-8 BOM,
-   see `jobs/registry/sources.yaml` header comment; `id` column is a
-   synthetic composite of location_id+hourday+date, NOT a stable key —
-   build `observed_at` from `sensing_date` + `hourday` instead and use
-   `(sensor_id, observed_at)` as the real key), `business_establishments`,
+   - `pedestrian_hourly.py` — the big one: 1,610,006 rows, streamed
+     (never held fully in memory) and inserted in batches of 5,000
+     multi-row `VALUES ... ON CONFLICT` statements (~19s end to end on
+     a dev laptop — measured, not estimated). Confirmed against the
+     FULL real file (not a sample): zero duplicate
+     `(location_id, sensing_date, hourday)` keys, so
+     `(sensor_id, observed_at)` is a safe PK; no nulls in any column
+     the loader uses; no negative counts. `observed_at` is built by
+     localizing `sensing_date`+`hourday` in `Australia/Melbourne` via
+     `zoneinfo` then converting to UTC — checked against all 4 real
+     DST transition dates in the file's range: spring-forward dates
+     never emit the nonexistent local hour (source already omits it,
+     zero collision risk), fall-back dates emit the ambiguous hour
+     exactly once per sensor (source already collapsed it). Round-trip
+     verified against a known real row (sensor 109,
+     2025-01-21 14:00 local → 2025-01-21 03:00 UTC, count 214) and
+     against three CONFIRMED orphan sensor_ids (28, 65, 78 — present in
+     this data, absent from the current `pedestrian_sensor_locations`
+     snapshot) which all loaded correctly precisely because there is
+     no FK. Idempotent re-load of the full 1.6M rows confirmed. See
+     `jobs/tests/test_transform_pedestrian_hourly.py`.
+   **Remaining loaders are separate future units**: `business_establishments`,
    `development_activity`, then GTFS `stops.txt` (nested inside two
    zip levels — see `jobs/registry/sources.yaml`'s `ptv_gtfs` entry).
 4. `0004` — `analytics` schema: `analysis_cell`, `location_feature`
