@@ -258,10 +258,34 @@ and multi-schema layouts do not autogenerate well). Run with
    preserved through the compose. 4 new tests (60 total in jobs/, up
    from 56), placing fixture stops at exact geodesic distances
    (`ST_Project`) so the 400-vs-800 m radius split is tested precisely.
-7. `0007` — remaining `analytics.location_feature` columns as their
-   families land (pedestrian demand, worker demand, development) +
-   `analytics.location_score`
+7. `0007` ✔ `core.clue_block` — the CLUE block geometry dimension
+   (§16.2), added mid-Phase-2 as the prerequisite for worker-demand
+   features: employment is reported per `block_id` with NO geometry, so
+   the block polygons must exist before per-block jobs can be placed in
+   space. Loader `jobs/retailscout_jobs/transform/clue_block.py`
+   (GeoJSON→PostGIS, upsert on `block_id`), registered as `clue_blocks`.
+   Real-data facts (profiled, 603 records): every `geo_shape` is a
+   Polygon (never MultiPolygon → typed Polygon); `block_id` is a unique
+   int natural key with no nulls, and ALL 603 `employment_by_block`
+   block_ids are a subset of it (join verified for the next unit).
+   Stores the source `geo_point_2d` as `centroid`. Verified against
+   live PostGIS: 603 blocks, 0 invalid geometries. Two benign anomalies
+   investigated, not ignored: 1 block centroid (501, West Melbourne
+   Industrial) sits 14 m outside the municipal boundary (edge block —
+   its POLYGON still intersects the boundary), and 6 centroids fall
+   1–64 m outside their own polygon (concave/L-shaped blocks — a
+   mathematical centroid, not a point-on-surface). Consequence for the
+   worker-demand FEATURE: allocate jobs via polygon intersection, not by
+   assuming a block centroid lies inside its block or the boundary.
+   3 new tests (63 total in jobs/, up from 60).
+8. `0008` — `core.employment_block` (jobs per block per census year) +
+   its loader, joining `clue_block` on `block_id`. Suppression
+   semantics: null = suppressed, 0 = observed zero — NEVER coalesce
+   (registry note + invariant 4).
+9. `0009` — remaining `analytics.location_feature` columns as their
+   families land (worker demand `jobs_400m`/`jobs_800m`, pedestrian
+   demand, development) + `analytics.location_score`
    (PK `(cell_id, business_profile, score_version)`), created with the
    scoring engine.
-8. `0008` — `app` schema: `project`, `saved_location`.
-9. `0009` — `audit` schema: `score_request`, `data_quality_result`.
+10. `0010` — `app` schema: `project`, `saved_location`.
+11. `0011` — `audit` schema: `score_request`, `data_quality_result`.

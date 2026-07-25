@@ -28,6 +28,7 @@ from sqlalchemy.engine import Connection
 
 from . import (
     business_establishment,
+    clue_block,
     development_project,
     municipal_boundary,
     pedestrian_hourly,
@@ -44,4 +45,5 @@ LOADERS: dict[str, LoaderFn] = {
     "business_establishments": business_establishment.load,
     "development_activity": development_project.load,
     "ptv_gtfs": transport_stop.load,
+    "clue_blocks": clue_block.load,
 }

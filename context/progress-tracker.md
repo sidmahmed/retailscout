@@ -15,13 +15,16 @@ Update this file after every meaningful implementation change.
 
 ## Current Goal
 
-- Worker-demand features (CLUE jobs-by-block), the next family in the
-  agreed order. Two sub-units, profile-first: (a) a core loader +
-  migration for the employment-by-block source (ingested to raw, no
-  core table yet) → `core.employment_block`; (b) worker-demand feature
-  columns (`jobs_400m`/`jobs_800m`) allocating block job totals to
-  cells (§9.3). After that: pedestrian demand (§10, the biggest unit),
-  then the scoring engine.
+- Worker-demand features (CLUE jobs-by-block). Sub-unit (a1) —
+  `core.clue_block` block geometry — is DONE (migration 0007, see
+  Completed). Next: (a2) `core.employment_block` loader (jobs per block
+  per census year, joining clue_block on block_id; null=suppressed,
+  0=observed, NEVER coalesce); then (b) worker-demand feature columns
+  (`jobs_400m`/`jobs_800m`) allocating block job totals to cells via
+  polygon intersection (§9.3 — NOT block-centroid, since centroids can
+  fall outside their block/the boundary, found in the 0007 load).
+  After worker demand: pedestrian demand (§10, biggest unit), then the
+  scoring engine.
 
 ## Completed
 
@@ -333,6 +336,26 @@ Update this file after every meaningful implementation change.
   (different sequences — FK violation); the fixture now threads the
   `source.dataset_release` id separately from the analytics
   `data_release` id.
+- Migration `0007` + `core.clue_block` loader (2026-07-25) — first
+  sub-unit of worker-demand: the CLUE block geometry dimension, a
+  prerequisite because employment is reported per `block_id` with NO
+  geometry of its own (can't place jobs in space without the block
+  polygons). Loader `transform/clue_block.py` (GeoJSON→PostGIS via
+  ST_GeomFromGeoJSON/ST_MakePoint, upsert on `block_id`), registered as
+  `clue_blocks` in LOADERS. Profiled the real snapshot first (603
+  records): all Polygon (never MultiPolygon), `block_id` a unique int
+  natural key with no nulls, and confirmed ALL 603
+  `employment_by_block` block_ids (23 census years 2002–2024) are a
+  subset of clue_blocks — the next unit's join is safe. Verified
+  against live PostGIS: 603 blocks, 0 invalid geometries. Investigated
+  (not ignored) two anomalies, both benign: 1 centroid (block 501)
+  14 m outside the boundary — an edge block whose polygon still
+  intersects the boundary; 6 centroids 1–64 m outside their own
+  polygon — concave/L-shaped blocks (a mathematical centroid isn't a
+  point-on-surface). Recorded the consequence for the worker-demand
+  feature: allocate jobs by polygon intersection, NOT by assuming a
+  block centroid lies in its block or the boundary. 3 new tests (63
+  total in jobs/, up from 60).
 
 ### Data validation findings
 
@@ -445,14 +468,16 @@ Each item is one unit of work (ai-workflow-rules.md). In order:
 4. ~~Transport-access features~~ **DONE 2026-07-25** — migration 0006 +
    `features/transport_features.py`, build-features now orchestrates
    business + transport (see Completed).
-5. Next feature family, per the agreed order:
-   - Worker-demand features (CLUE jobs-by-block) — FIRST needs a core
-     loader for the employment-by-block source (ingested to raw but no
-     core table yet), THEN the feature. Two sub-units: (a) core loader
-     + migration for `core.employment_block`; (b) worker-demand
-     feature columns (`jobs_400m`, `jobs_800m`) allocating block job
-     totals to cells (§9.3 "allocate block totals to intersecting
-     cells, or query whole blocks within a walking catchment").
+5. Worker-demand features (CLUE jobs-by-block), continued:
+   - ~~(a1) `core.clue_block` geometry~~ **DONE 2026-07-25** (0007).
+   - (a2) `core.employment_block` loader + migration: jobs per block
+     per census year, joins clue_block on block_id. Suppression:
+     null=suppressed, 0=observed — NEVER coalesce. Prefer
+     `total_jobs_in_block` over summing partially-suppressed industry
+     columns (registry note).
+   - (b) worker-demand feature columns (`jobs_400m`, `jobs_800m`)
+     allocating block job totals to cells by POLYGON intersection
+     (§9.3), using the latest census_year.
    - Pedestrian demand (§10) — highest value, biggest unit: sensor
      daypart baselines from the 1.6M `core.pedestrian_observation`
      rows, then distance-decay interpolation to cells + a separate
