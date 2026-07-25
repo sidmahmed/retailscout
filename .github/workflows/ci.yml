@@ -17,11 +17,29 @@ jobs:
       - run: uv run pytest
 
   jobs-worker:
+    # Has a postgres service (unlike backend/) because jobs/tests/test_provenance.py
+    # writes to source.* and needs migration 0002 applied first.
     runs-on: ubuntu-latest
     defaults: { run: { working-directory: jobs } }
+    services:
+      postgres:
+        image: postgis/postgis:17-3.5
+        env:
+          POSTGRES_DB: retailscout
+          POSTGRES_USER: retailscout
+          POSTGRES_PASSWORD: ci-only
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U retailscout" --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_DIRECT_URL: postgresql+psycopg://retailscout:ci-only@localhost:5432/retailscout
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
+      - name: alembic upgrade head
+        working-directory: db
+        run: uv run --with alembic,sqlalchemy,"psycopg[binary]" alembic upgrade head
       - run: uv sync
       - run: uv run ruff check .
       - run: uv run pytest

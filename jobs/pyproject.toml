@@ -7,13 +7,17 @@ dependencies = [
     "httpx>=0.27",
     "pydantic>=2.7",
     "pyyaml>=6.0",
+    "sqlalchemy>=2.0",
+    "psycopg[binary]>=3.1",
 ]
 
 # Add these as the corresponding pipeline stages are built — declared
 # here as documentation so nobody reaches for pandas out of habit:
 #   transform/features:  "polars", "pyarrow", "pandera"
 #   geospatial:          "geopandas", "shapely", "pyproj", "h3"
-#   db loading:          "sqlalchemy>=2", "psycopg[binary]", "geoalchemy2"
+#
+# geoalchemy2 is intentionally NOT added yet: no geometry columns exist
+# in jobs/ code until the core.* staging loader (db/README.md 0003).
 
 [dependency-groups]
 dev = [

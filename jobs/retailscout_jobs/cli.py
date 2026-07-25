@@ -8,9 +8,12 @@
 
 `ingest` downloads a full export and writes an immutable raw snapshot
 under RAW_DATA_DIR. `adopt` does the same for operator-provided files
-when a source's upstream feed is unusable (status: manual). Neither
-loads the database — staging loads are a separate pipeline stage
-(transform/), keeping "copy the bytes" and "interpret the bytes"
+when a source's upstream feed is unusable (status: manual). Both then
+record provenance (source.dataset / source.dataset_release /
+source.ingestion_run — see db/migrations/versions/0002) via
+DATABASE_DIRECT_URL. Neither parses file contents or loads staging
+tables — that is a separate pipeline stage (transform/), keeping
+"copy the bytes", "record what was copied", and "interpret the bytes"
 independently re-runnable.
 """
 
@@ -23,11 +26,27 @@ import tempfile
 from pathlib import Path
 
 from .opendatasoft import OpenDataSoftClient
-from .registry import SourceStatus, load_registry
+from .registry import SourceDefinition, SourceRegistry, SourceStatus, load_registry
 
 
 def _raw_root() -> Path:
     return Path(os.environ.get("RAW_DATA_DIR", "../data/raw")).resolve()
+
+
+def _record_provenance(
+    registry: SourceRegistry, source: SourceDefinition, snapshot_dir: Path, raw_root: Path
+) -> None:
+    from .db import get_engine
+    from .provenance import record_release, upsert_dataset
+
+    engine = get_engine()
+    try:
+        with engine.begin() as conn:
+            upsert_dataset(conn, registry, source)
+            release_id = record_release(conn, source, snapshot_dir, raw_root)
+    finally:
+        engine.dispose()
+    print(f"Provenance recorded: source.dataset_release#{release_id}")
 
 
 def cmd_list() -> int:
@@ -84,8 +103,9 @@ def cmd_ingest(source_id: str) -> int:
 
     from .snapshot import write_snapshot
 
+    raw_root = _raw_root()
     target = write_snapshot(
-        raw_root=_raw_root(),
+        raw_root=raw_root,
         provider=registry.provider_for(source),
         source_id=source.id,
         remote_dataset_id=source.remote_dataset_id,
@@ -96,6 +116,7 @@ def cmd_ingest(source_id: str) -> int:
         retrieval_mode="http_download" if source.fetch_mode == "http_file" else "api_export",
     )
     print(f"Snapshot written: {target}")
+    _record_provenance(registry, source, target, raw_root)
     return 0
 
 
@@ -119,7 +140,6 @@ def cmd_adopt(source_id: str, files: list[str], retrieved_date: str, note: str) 
 
     registry = load_registry()
     source = registry.get(source_id)
-    defaults = registry.provider_defaults
 
     if source.status != SourceStatus.MANUAL:
         print(
@@ -130,9 +150,10 @@ def cmd_adopt(source_id: str, files: list[str], retrieved_date: str, note: str) 
         )
         return 2
 
+    raw_root = _raw_root()
     target = adopt_snapshot(
-        raw_root=_raw_root(),
-        provider=defaults.provider,
+        raw_root=raw_root,
+        provider=registry.provider_for(source),
         source_id=source.id,
         remote_dataset_id=source.remote_dataset_id,
         source_files=[Path(f) for f in files],
@@ -142,6 +163,7 @@ def cmd_adopt(source_id: str, files: list[str], retrieved_date: str, note: str) 
         retrieved_date=dt.date.fromisoformat(retrieved_date),
     )
     print(f"Snapshot written: {target}")
+    _record_provenance(registry, source, target, raw_root)
     return 0
 
 

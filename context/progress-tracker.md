@@ -4,15 +4,15 @@ Update this file after every meaningful implementation change.
 
 ## Current Phase
 
-- Phase 0 (data feasibility) nearly complete; Phase 1 (data
-  foundation) ready to start. Repository scaffold is built and
-  verified end to end.
+- Phase 1 (data foundation) underway. Source-provenance tracking
+  (migration `0002`) is live end to end; every raw snapshot is now
+  traceable in the database, not just on disk.
 
 ## Current Goal
 
-- Begin Phase 1: migration `0002` (source/provenance tables per
-  `db/README.md` roadmap), then the staging loader that reads raw
-  snapshots into `staging.*`.
+- Migration `0003` — `core` schema tables, then the first staging→core
+  loader (start with `municipal_boundary`, since everything spatial
+  depends on it).
 
 ## Completed
 
@@ -69,6 +69,30 @@ Update this file after every meaningful implementation change.
   - `.github/workflows/ci.yml`: backend/jobs (uv+ruff+pytest),
     frontend (npm ci+typecheck+build), and a migrations job against a
     real PostGIS service container.
+  - First commit made 2026-07-25 (`9c3c5fb`), 64 files.
+- Migration `0002` — source provenance (2026-07-25): `source.dataset`
+  (registry mirror, upserted every run), `source.dataset_release`
+  (`UNIQUE (dataset_id, object_path)` — same-day re-ingests upsert,
+  never duplicate), `source.dataset_release_file` (per-file checksums;
+  handles the multi-file manual-adopt case), `source.ingestion_run`.
+  `jobs/retailscout_jobs/{db,provenance}.py` added; `cli.py
+  ingest`/`adopt` now call `_record_provenance` after every successful
+  snapshot. Deviates from the original single-table sketch in
+  `database-architecture.md` to support multi-file manifests — see
+  `db/README.md` roadmap entry for the full rationale.
+  **Verified against live PostGIS, not just applied**: real
+  `pedestrian_sensor_locations`, `transport_activity` (adopt), and
+  `ptv_gtfs` snapshots all have `source.dataset_release` rows;
+  idempotent re-ingest confirmed (same release_id, no duplicate rows,
+  file rows replaced wholesale). `jobs/tests/test_provenance.py` adds
+  4 DB-backed tests (16 total in jobs/, up from 13), each in a rolled-
+  back transaction using a fictional sentinel date (2099-01-01) so
+  tests never collide with real same-day CLI usage on a shared dev
+  database — an actual collision during this work (test used "today"
+  as its date and matched real rows via the `(dataset_id, object_path)`
+  unique key) is why that pattern is now load-bearing, not decorative.
+  CI: `jobs-worker` job gained its own postgres service + migration
+  step so these tests run in CI, not just locally.
 
 ### Data validation findings
 
@@ -166,23 +190,21 @@ Key confirmations and discrepancies vs. the architecture doc:
 
 Each item is one unit of work (ai-workflow-rules.md). In order:
 
-1. Make the first git commit of the scaffold (user decision on
-   timing/message).
-2. Manually verify the remaining source blocker: pedestrian
+1. Manually verify the remaining source blocker: pedestrian
    hourly-counts licence (portal page / council contact). Update
    `sources.yaml` when answered. (Transport archives: resolved via
    adopt; only the live-feed question remains open.)
-3. Migration `0002` — `source` schema tables (`dataset`,
-   `dataset_release`, `ingestion_run`) per `db/README.md`; then make
-   `cli.py ingest` record a `dataset_release` row after each snapshot.
-4. Run `make ingest` for every remaining `status: active` source to
-   produce a full local raw snapshot set (`pedestrian_sensor_locations`
-   and `ptv_gtfs` already snapshotted; `transport_activity` archives
-   adopted).
-5. Migration `0003` — `core` tables; first staging→core loader
+2. Run `make ingest` for every remaining `status: active` source to
+   produce a full local raw snapshot set with provenance recorded
+   (`pedestrian_sensor_locations`, `transport_activity`, `ptv_gtfs`
+   already done — `business_establishments`, `cafe_seats`,
+   `employment_by_block`, `establishments_per_block`, `clue_blocks`,
+   `development_activity`, `pedestrian_network`, `parking_bays`,
+   `parking_bay_sensors`, `municipal_boundary` still pending).
+3. Migration `0003` — `core` tables; first staging→core loader
    (start: `municipal_boundary`, then `pedestrian_sensor_locations` +
    `pedestrian_hourly`).
-6. Generate the analysis hex grid clipped to the municipal boundary
+4. Generate the analysis hex grid clipped to the municipal boundary
    (resolution decision — open question below — must be settled
    first).
 
@@ -264,8 +286,9 @@ Each item is one unit of work (ai-workflow-rules.md). In order:
   `imresamu/postgis` local image); Python 3.14 is what `uv` resolved
   locally (pyprojects require >=3.12); Node 20+/npm and Docker
   Desktop present.
-- Nothing has been committed to git yet — `git init` done, worktree
-  is entirely untracked files. First commit is Next Up item 1.
+- First commit made 2026-07-25 (`9c3c5fb`): full scaffold, 64 files.
+  `data/`, venvs, and node_modules stay gitignored/untracked by
+  design — raw snapshots belong in object storage, not git.
 - The scaffold intentionally stops at 501 for `/locations/score`:
   the response contract is published and tested, but no scoring logic
   exists. Do not implement scoring in `backend/` — it reads

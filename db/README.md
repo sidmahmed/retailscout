@@ -11,8 +11,11 @@ and multi-schema layouts do not autogenerate well). Run with
   migration; add a new one.
 - Filenames: `NNNN_short_slug.py` with a zero-padded numeric revision
   (`revision = "0002"`, `down_revision = "0001"`).
-- Every table carries a `source_release_id` (for ingested data) so any
-  row traces back to the raw snapshot that produced it.
+- Every `core.*`/`analytics.*` table that holds ingested data carries a
+  `source_release_id` referencing `source.dataset_release(release_id)`
+  so any row traces back to the raw snapshot that produced it. (This
+  does not apply to the `source.*` tables themselves — they define
+  what a release *is*, per migration 0002.)
 - Spatial columns are `geometry(<Type>, 4326)` with a GiST index named
   `<table>_<column>_idx`.
 - Nullable means "source did not report it" (e.g. suppressed CLUE
@@ -21,12 +24,21 @@ and multi-schema layouts do not autogenerate well). Run with
 ## Migration roadmap (implement in order, one per unit of work)
 
 1. `0001` ✔ extensions (`postgis`, `pg_trgm`) + the six schemas.
-2. `0002` — `source` schema: `source.dataset` (mirrors
-   `jobs/registry/sources.yaml`), `source.dataset_release` (one row per
-   raw snapshot: url, retrieved_at, object_path, sha256, row_count,
-   schema_signature, status), `source.ingestion_run`.
-   Reference DDL: `database-architecture.md` §"Raw files should not
-   live in Postgres".
+2. `0002` ✔ `source` schema: `source.dataset` (mirrors
+   `jobs/registry/sources.yaml`, upserted on every ingest/adopt run),
+   `source.dataset_release` (one row per raw snapshot directory —
+   `UNIQUE (dataset_id, object_path)` makes same-day re-ingests
+   idempotent), `source.dataset_release_file` (per-file checksums;
+   most releases have one file, manually-adopted sources can have
+   several), `source.ingestion_run` (one row per successful ingest,
+   linking dataset → release). Wired into `jobs/retailscout_jobs/cli.py`
+   via `provenance.py`; see `jobs/tests/test_provenance.py` for the
+   round-trip proof. `row_count` is nullable, filled in by the staging
+   loader in 0003 — the raw-snapshot step does not parse file contents.
+   Deviates from the original `database-architecture.md` sketch (single
+   `sha256`/`row_count` columns on one table) to accommodate multi-file
+   manual-adopt snapshots; the intent (every release is traceable,
+   checksummed, and reproducible) is unchanged.
 3. `0003` — `core` schema: `pedestrian_sensor`,
    `pedestrian_observation` (PK `(sensor_id, observed_at)`),
    `business_establishment` (with `valid_from`/`valid_to`),
