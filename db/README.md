@@ -52,19 +52,32 @@ and multi-schema layouts do not autogenerate well). Run with
    the deferred council datasets). Column types are informed by
    inspecting the real 2026-07-25 snapshots, not guessed — see the
    migration file's docstring for specifics per table.
-   **Only one loader is implemented so far**:
-   `jobs/retailscout_jobs/transform/municipal_boundary.py`, wired via
-   `cli.py load <source_id>` and registered in `transform/__init__.py`
-   `LOADERS`. Verified against live PostGIS: loaded geometry has the
-   correct real-world area (37.66 km², matches the actual City of
-   Melbourne), and `ST_Contains` correctly includes a CBD point and
-   excludes an outside-boundary point (the golden-locations FR-02
-   control) — see `jobs/tests/test_transform_municipal_boundary.py`.
+   **Two loaders implemented so far**, both in
+   `jobs/retailscout_jobs/transform/`, wired via `cli.py load
+   <source_id>` and registered in `transform/__init__.py` `LOADERS`:
+   - `municipal_boundary.py` — verified against live PostGIS: loaded
+     geometry has the correct real-world area (37.66 km², matches the
+     actual City of Melbourne), and `ST_Contains` correctly includes a
+     CBD point and excludes an outside-boundary point (the
+     golden-locations FR-02 control) — see
+     `jobs/tests/test_transform_municipal_boundary.py`.
+   - `pedestrian_sensor.py` — verified against live PostGIS: all 134
+     real sensors loaded, nullable fields handled correctly (1 sensor
+     with null `installed_at`, 34 with null direction labels — matches
+     the real data exactly, not just the fixture), idempotent re-load
+     confirmed, and a cross-table sanity check confirmed **all 134
+     sensors fall inside the loaded municipal boundary** — the two
+     loaders agree with each other, not just individually plausible.
+     Deliberately does NOT track sensor-location history (always
+     upserts to the latest known position) — architecture.md §4.2's
+     concern about relocated sensors needs a period/validity table,
+     scoped out until `pedestrian_hourly` is loaded and the gap
+     actually matters. See
+     `jobs/tests/test_transform_pedestrian_sensor.py`.
    **Remaining loaders are separate future units**, roughly in this
-   order: `pedestrian_sensor_locations` (small, straightforward),
-   `pedestrian_hourly` (1.6M rows — needs streaming CSV, not a full
-   in-memory parse; CSV is semicolon-delimited with a UTF-8 BOM, see
-   `jobs/registry/sources.yaml` header comment; `id` column is a
+   order: `pedestrian_hourly` (1.6M rows — needs streaming CSV, not a
+   full in-memory parse; CSV is semicolon-delimited with a UTF-8 BOM,
+   see `jobs/registry/sources.yaml` header comment; `id` column is a
    synthetic composite of location_id+hourday+date, NOT a stable key —
    build `observed_at` from `sensing_date` + `hourday` instead and use
    `(sensor_id, observed_at)` as the real key), `business_establishments`,

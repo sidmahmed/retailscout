@@ -5,15 +5,19 @@ Update this file after every meaningful implementation change.
 ## Current Phase
 
 - Phase 1 (data foundation) underway. Provenance tracking (`0002`) and
-  the `core` schema (`0003`) both live; the municipal boundary is
-  loaded and FR-02 containment checks are verified correct against it.
+  the `core` schema (`0003`) both live; municipal boundary and
+  pedestrian sensors are loaded and cross-verified against each other
+  (all 134 sensors fall inside the loaded boundary).
 
 ## Current Goal
 
-- Build the next staging→core loader: `pedestrian_sensor_locations`
-  (small, straightforward — good next step before tackling the 1.6M-row
-  `pedestrian_hourly` loader, which needs streaming CSV + the
-  synthetic-id gotcha noted in `db/README.md`).
+- Build the `pedestrian_hourly` loader (1.6M rows — needs streaming
+  CSV, not a full in-memory parse; semicolon delimiter + UTF-8 BOM;
+  `observed_at` must be built from `sensing_date`+`hourday`, NOT the
+  `id` column, which is a synthetic composite — see `db/README.md`'s
+  0003 entry for the full gotcha list). This is the biggest/riskiest
+  remaining core loader — the smaller ones (`pedestrian_sensor_locations`,
+  `municipal_boundary`) are done specifically to de-risk this one.
 
 ## Completed
 
@@ -135,6 +139,22 @@ Update this file after every meaningful implementation change.
   `development_activity`, GTFS `stops.txt`) are deliberately separate
   future units — see `db/README.md`'s roadmap entry for ordering and
   per-source gotchas.
+- Loader: `pedestrian_sensor_locations` → `core.pedestrian_sensor`
+  (2026-07-25): all 134 real sensors loaded and verified — nullable
+  fields match the real data exactly (1 null `installed_at`, 34 null
+  direction labels, confirmed by inspection before writing the loader,
+  not discovered by trial and error), idempotent re-load confirmed,
+  and a cross-table sanity check (`ST_Contains` against
+  `core.municipal_boundary`) confirms **all 134 sensors fall inside
+  the loaded boundary** — the two loaders built so far agree with each
+  other, which is a stronger signal than either being independently
+  plausible. Deliberately does not track sensor-location history
+  (always upserts to the latest known position); a period/validity
+  table for relocated sensors is scoped out until `pedestrian_hourly`
+  makes that gap actually matter. 2 new tests (21 total in jobs/, up
+  from 19), including one that proves upsert semantics by mutating a
+  fixture's status between two loads and checking the change actually
+  took effect (not just that the row count stayed put).
 
 ### Data validation findings
 
@@ -237,13 +257,11 @@ Each item is one unit of work (ai-workflow-rules.md). In order:
    `sources.yaml` when answered. (Transport archives: resolved via
    adopt; only the live-feed question remains open.) — deprioritized
    per user 2026-07-25, revisit before beta/attribution work.
-2. Loader: `pedestrian_sensor_locations` → `core.pedestrian_sensor`
-   (small, 134 rows — good next unit).
-3. Loader: `pedestrian_hourly` → `core.pedestrian_observation`
+2. Loader: `pedestrian_hourly` → `core.pedestrian_observation`
    (1.6M rows — needs streaming CSV, semicolon delimiter + BOM,
    `observed_at` built from `sensing_date`+`hourday`, NOT the `id`
    column — see `db/README.md` 0003 entry for the full gotcha list).
-4. Generate the analysis hex grid clipped to the municipal boundary
+3. Generate the analysis hex grid clipped to the municipal boundary
    (resolution decision — open question below — must be settled
    first; `core.municipal_boundary` is now loaded and ready to clip
    against).
