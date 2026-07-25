@@ -11,13 +11,15 @@ def test_health():
     assert response.json() == {"status": "ok", "service": "retailscout-api"}
 
 
-def test_score_endpoint_is_stubbed_not_absent():
-    """The endpoint must exist (contract published) but honestly refuse."""
+def test_score_endpoint_never_500s():
+    """Implemented for real (was a 501 stub). Without a reachable/populated
+    DB it must degrade to 503, never crash; with data it returns 200.
+    Full data-backed behaviour lives in test_score_api.py."""
     response = client.get(
         "/api/v1/locations/score",
         params={"lat": -37.8136, "lon": 144.9631, "profile": "cafe"},
     )
-    assert response.status_code == 501
+    assert response.status_code in {200, 503}
 
 
 def test_score_endpoint_validates_profile():

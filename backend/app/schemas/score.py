@@ -47,7 +47,13 @@ class Confidence(BaseModel):
 
 class ComponentScore(BaseModel):
     key: str = Field(..., description="e.g. pedestrian_demand, worker_demand, market_fit")
-    score: int = Field(..., ge=0, le=100)
+    score: int | None = Field(
+        None,
+        ge=0,
+        le=100,
+        description="Null when the component was not computed (missing evidence, "
+        "reweighted out per §15.5) — never coerced to 0.",
+    )
     weight: int = Field(..., ge=0, le=100)
     evidence: dict[str, float | int | str | None] = Field(
         default_factory=dict,

@@ -10,7 +10,8 @@ from retailscout_jobs.score_config import COMPONENTS, ScoreConfig, load_score_co
 def test_real_config_loads():
     c = load_score_config()
     assert c.version
-    assert set(c.profiles) == {"cafe", "retail", "food_truck", "pop_up"}
+    # Profile ids are part of the API contract (backend BusinessProfile enum).
+    assert set(c.profiles) == {"cafe", "retail_shop", "food_truck", "pop_up"}
     for weights in c.profiles.values():
         d = weights.as_dict()
         assert set(d) == set(COMPONENTS)

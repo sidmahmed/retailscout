@@ -7,8 +7,10 @@ Planned routers (architecture doc §17) — add as they are implemented:
 
 from fastapi import APIRouter
 
-from app.api.v1 import health, locations
+from app.api.v1 import health, locations, meta, tiles
 
 api_router = APIRouter(prefix="/api/v1")
 api_router.include_router(health.router)
 api_router.include_router(locations.router)
+api_router.include_router(meta.router)
+api_router.include_router(tiles.router)

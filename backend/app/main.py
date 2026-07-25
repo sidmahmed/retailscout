@@ -2,8 +2,10 @@
 imports anywhere in this package, so the API can move to any container
 platform without a rewrite (vercel-template.md §"One caution")."""
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from sqlalchemy.exc import OperationalError
 
 from app.api.v1.router import api_router
 from app.core.config import get_settings
@@ -27,6 +29,13 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     application.include_router(api_router)
+
+    @application.exception_handler(OperationalError)
+    async def _db_unavailable(_request: Request, _exc: OperationalError) -> JSONResponse:
+        # Unreachable database is an operational state (deploy order,
+        # outage), not an application bug — surface it as 503, not 500.
+        return JSONResponse(status_code=503, content={"detail": "Database unavailable"})
+
     return application
 
 

@@ -18,7 +18,9 @@ profiles:
     competition: 20
     transport: 20
     development: 10
-  retail:
+  # NOTE: profile ids must match backend/app/schemas/score.py BusinessProfile
+  # (the published API contract): cafe, retail_shop, food_truck, pop_up.
+  retail_shop:
     foot_traffic: 30
     worker_demand: 10
     competition: 20

@@ -4,6 +4,24 @@ Update this file after every meaningful implementation change.
 
 ## Current Phase
 
+- PHASE 3 (product API + frontend) is UNDERWAY. The runtime API is
+  implemented for real (2026-07-25): `/api/v1/locations/score` (was a
+  501 stub) serves the full §17.3 ScoreResponse from
+  `analytics.location_score` — point→cell via ST_Contains, 400 outside
+  the boundary (FR-02), 503 (never 500) when DB/release is absent.
+  Plus `/business-profiles` (from what is actually scored),
+  `/coverage` (boundary GeoJSON + bounds + release id), and
+  `/tiles/suitability/{profile}/{z}/{x}/{y}.mvt` (ST_AsMVT hex tiles,
+  ~74KB at z12, 1h cache). Profile naming fixed at the root:
+  jobs `retail` → `retail_shop` to match the published contract;
+  scores rebuilt; stale rows deleted. `ComponentScore.score` is now
+  nullable (missing ≠ 0, invariant 4) — contracts regenerated.
+  Backend layering respected (router → service → repository, explicit
+  SQL). 5 new DB-backed tests (skip cleanly when no scored DB is
+  reachable, e.g. CI's backend job) — 9 backend tests total.
+
+## Previous Phase
+
 - Phase 2 (feature/scoring engine) is UNDERWAY. Phase 1 (data
   foundation) and the Phase 1→2 bridge (hex grid, `0004`) are complete.
   The first `location_feature` slice — business/competition features

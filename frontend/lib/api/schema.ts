@@ -34,18 +34,61 @@ export interface paths {
         };
         /**
          * Get Location Score
-         * @description Score a candidate point for a business profile.
-         *
-         *     Contract notes for the implementer:
-         *     - Validate the point against core.municipal_boundary FIRST; reject
-         *       out-of-boundary points with 400, never silently score them.
-         *     - Map the point to its analytics.analysis_cell, then read the
-         *       precomputed analytics.location_score row for (cell, profile,
-         *       active score_version, active data_release).
-         *     - No spatial computation beyond point-in-polygon + cell lookup
-         *       happens at request time.
+         * @description Score a candidate point: point -> containing analysis cell ->
+         *     precomputed score row. No spatial computation beyond containment.
          */
         get: operations["get_location_score_api_v1_locations_score_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/business-profiles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Business Profiles */
+        get: operations["get_business_profiles_api_v1_business_profiles_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/coverage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Coverage */
+        get: operations["get_coverage_api_v1_coverage_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tiles/suitability/{profile}/{z}/{x}/{y}.mvt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Suitability Tile */
+        get: operations["get_suitability_tile_api_v1_tiles_suitability__profile___z___x___y__mvt_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -70,8 +113,11 @@ export interface components {
              * @description e.g. pedestrian_demand, worker_demand, market_fit
              */
             key: string;
-            /** Score */
-            score: number;
+            /**
+             * Score
+             * @description Null when the component was not computed (missing evidence, reweighted out per §15.5) — never coerced to 0.
+             */
+            score?: number | null;
             /** Weight */
             weight: number;
             /**
@@ -101,6 +147,28 @@ export interface components {
          * @enum {string}
          */
         ConfidenceBand: "high" | "medium" | "low" | "insufficient";
+        /** Coverage */
+        Coverage: {
+            /**
+             * Municipality
+             * @default City of Melbourne
+             */
+            municipality: string;
+            /** Data Release */
+            data_release: string;
+            /**
+             * Boundary
+             * @description GeoJSON MultiPolygon, simplified
+             */
+            boundary: {
+                [key: string]: unknown;
+            };
+            /**
+             * Bounds
+             * @description [min_lon, min_lat, max_lon, max_lat]
+             */
+            bounds: number[];
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -112,6 +180,15 @@ export interface components {
             status: string;
             /** Service */
             service: string;
+        };
+        /** ProfileInfo */
+        ProfileInfo: {
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+            /** Description */
+            description: string;
         };
         /** ScoreLocation */
         ScoreLocation: {
@@ -236,12 +313,86 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
-            /** @description Scoring pipeline not yet implemented */
-            501: {
+            /** @description No published data release / scores yet */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    get_business_profiles_api_v1_business_profiles_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileInfo"][];
+                };
+            };
+        };
+    };
+    get_coverage_api_v1_coverage_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Coverage"];
+                };
+            };
+        };
+    };
+    get_suitability_tile_api_v1_tiles_suitability__profile___z___x___y__mvt_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profile: components["schemas"]["BusinessProfile"];
+                z: number;
+                x: number;
+                y: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.mapbox-vector-tile": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
             };
         };
     };

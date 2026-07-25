@@ -34,7 +34,7 @@
           "locations"
         ],
         "summary": "Get Location Score",
-        "description": "Score a candidate point for a business profile.\n\nContract notes for the implementer:\n- Validate the point against core.municipal_boundary FIRST; reject\n  out-of-boundary points with 400, never silently score them.\n- Map the point to its analytics.analysis_cell, then read the\n  precomputed analytics.location_score row for (cell, profile,\n  active score_version, active data_release).\n- No spatial computation beyond point-in-polygon + cell lookup\n  happens at request time.",
+        "description": "Score a candidate point: point -> containing analysis cell ->\nprecomputed score row. No spatial computation beyond containment.",
         "operationId": "get_location_score_api_v1_locations_score_get",
         "parameters": [
           {
@@ -86,8 +86,122 @@
           "400": {
             "description": "Point outside the supported municipal boundary (FR-02)"
           },
-          "501": {
-            "description": "Scoring pipeline not yet implemented"
+          "503": {
+            "description": "No published data release / scores yet"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/business-profiles": {
+      "get": {
+        "tags": [
+          "meta"
+        ],
+        "summary": "Get Business Profiles",
+        "operationId": "get_business_profiles_api_v1_business_profiles_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ProfileInfo"
+                  },
+                  "type": "array",
+                  "title": "Response Get Business Profiles Api V1 Business Profiles Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/coverage": {
+      "get": {
+        "tags": [
+          "meta"
+        ],
+        "summary": "Get Coverage",
+        "operationId": "get_coverage_api_v1_coverage_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Coverage"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tiles/suitability/{profile}/{z}/{x}/{y}.mvt": {
+      "get": {
+        "tags": [
+          "tiles"
+        ],
+        "summary": "Get Suitability Tile",
+        "operationId": "get_suitability_tile_api_v1_tiles_suitability__profile___z___x___y__mvt_get",
+        "parameters": [
+          {
+            "name": "profile",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/BusinessProfile"
+            }
+          },
+          {
+            "name": "z",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "maximum": 22,
+              "minimum": 0,
+              "title": "Z"
+            }
+          },
+          {
+            "name": "x",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "title": "X"
+            }
+          },
+          {
+            "name": "y",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "title": "Y"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/vnd.mapbox-vector-tile": {}
+            }
           },
           "422": {
             "description": "Validation Error",
@@ -123,10 +237,18 @@
             "description": "e.g. pedestrian_demand, worker_demand, market_fit"
           },
           "score": {
-            "type": "integer",
-            "maximum": 100.0,
-            "minimum": 0.0,
-            "title": "Score"
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 100.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score",
+            "description": "Null when the component was not computed (missing evidence, reweighted out per \u00a715.5) \u2014 never coerced to 0."
           },
           "weight": {
             "type": "integer",
@@ -159,7 +281,6 @@
         "type": "object",
         "required": [
           "key",
-          "score",
           "weight"
         ],
         "title": "ComponentScore"
@@ -203,6 +324,40 @@
         ],
         "title": "ConfidenceBand"
       },
+      "Coverage": {
+        "properties": {
+          "municipality": {
+            "type": "string",
+            "title": "Municipality",
+            "default": "City of Melbourne"
+          },
+          "data_release": {
+            "type": "string",
+            "title": "Data Release"
+          },
+          "boundary": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Boundary",
+            "description": "GeoJSON MultiPolygon, simplified"
+          },
+          "bounds": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Bounds",
+            "description": "[min_lon, min_lat, max_lon, max_lat]"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data_release",
+          "boundary",
+          "bounds"
+        ],
+        "title": "Coverage"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -233,6 +388,29 @@
           "service"
         ],
         "title": "HealthResponse"
+      },
+      "ProfileInfo": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "label",
+          "description"
+        ],
+        "title": "ProfileInfo"
       },
       "ScoreLocation": {
         "properties": {
