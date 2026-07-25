@@ -15,15 +15,16 @@ Update this file after every meaningful implementation change.
 
 ## Current Goal
 
-- Worker-demand features (CLUE jobs-by-block). Sub-unit (a1) —
-  `core.clue_block` block geometry — is DONE (migration 0007, see
-  Completed). Next: (a2) `core.employment_block` loader (jobs per block
-  per census year, joining clue_block on block_id; null=suppressed,
-  0=observed, NEVER coalesce); then (b) worker-demand feature columns
-  (`jobs_400m`/`jobs_800m`) allocating block job totals to cells via
-  polygon intersection (§9.3 — NOT block-centroid, since centroids can
-  fall outside their block/the boundary, found in the 0007 load).
-  After worker demand: pedestrian demand (§10, biggest unit), then the
+- Worker-demand features (CLUE jobs-by-block). The two core
+  prerequisites are DONE: (a1) `core.clue_block` geometry (0007) and
+  (a2) `core.employment_block` jobs (0008) — both live and verified.
+  Next: (b) the worker-demand FEATURE — `ALTER location_feature ADD
+  jobs_400m/jobs_800m` + a `worker_features` loader allocating latest-
+  year block job totals to cells by POLYGON intersection (§9.3), joined
+  into the build-features orchestrator. Must preserve suppression: a
+  block with NULL total_jobs contributes unknown, not 0 (a cell whose
+  catchment blocks are all suppressed should read NULL, not 0). After
+  worker demand: pedestrian demand (§10, biggest unit), then the
   scoring engine.
 
 ## Completed
@@ -356,6 +357,27 @@ Update this file after every meaningful implementation change.
   feature: allocate jobs by polygon intersection, NOT by assuming a
   block centroid lies in its block or the boundary. 3 new tests (63
   total in jobs/, up from 60).
+- Migration `0008` + `core.employment_block` loader (2026-07-25) —
+  second worker-demand prerequisite: CLUE jobs per block per census
+  year (the worker-demand fact). Loader `transform/employment_block.py`
+  (registered `employment_by_block`), upsert on natural key
+  `(census_year, block_id)`. Profiled first: 13,519 rows, PK unique,
+  all values integers. THE point of the table is suppression: an empty
+  cell = suppressed → NULL, "0" = observed zero → 0, never conflated
+  (invariant 4) — and even `total_jobs` is suppressed for 133 of 603
+  blocks in 2024, so it is nullable and the worker-demand feature must
+  treat those as UNKNOWN not zero (and never reconstruct a suppressed
+  total by summing the also-suppressed industry columns, per the
+  registry note). The 20 ANZSIC-division counts live in
+  `jobs_by_industry jsonb` (JSON null vs 0 preserves suppression — the
+  development_project pattern), not 20 speculative columns. NO FK to
+  `clue_block` (pedestrian_observation precedent). Verified against
+  live PostGIS: 13,519 rows; 2024 `total_jobs` NULL=133 (matches the
+  raw profile exactly) / =0 for 80 / >0 for 390; jsonb null-vs-0
+  preserved (`jsonb_typeof` 'null' vs 'number'); all 603 2024 blocks
+  join to `clue_block` with 520,544 known jobs. Both worker-demand core
+  prerequisites (geometry + jobs) are now in place; the feature is next.
+  3 new tests (66 total in jobs/, up from 63).
 
 ### Data validation findings
 
@@ -470,14 +492,11 @@ Each item is one unit of work (ai-workflow-rules.md). In order:
    business + transport (see Completed).
 5. Worker-demand features (CLUE jobs-by-block), continued:
    - ~~(a1) `core.clue_block` geometry~~ **DONE 2026-07-25** (0007).
-   - (a2) `core.employment_block` loader + migration: jobs per block
-     per census year, joins clue_block on block_id. Suppression:
-     null=suppressed, 0=observed — NEVER coalesce. Prefer
-     `total_jobs_in_block` over summing partially-suppressed industry
-     columns (registry note).
+   - ~~(a2) `core.employment_block` jobs~~ **DONE 2026-07-25** (0008).
    - (b) worker-demand feature columns (`jobs_400m`, `jobs_800m`)
-     allocating block job totals to cells by POLYGON intersection
-     (§9.3), using the latest census_year.
+     allocating latest-year block job totals to cells by POLYGON
+     intersection (§9.3), joined into the build-features orchestrator.
+     Preserve suppression: a NULL total contributes unknown, not 0.
    - Pedestrian demand (§10) — highest value, biggest unit: sensor
      daypart baselines from the 1.6M `core.pedestrian_observation`
      rows, then distance-decay interpolation to cells + a separate

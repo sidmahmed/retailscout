@@ -30,6 +30,7 @@ from . import (
     business_establishment,
     clue_block,
     development_project,
+    employment_block,
     municipal_boundary,
     pedestrian_hourly,
     pedestrian_sensor,
@@ -46,4 +47,5 @@ LOADERS: dict[str, LoaderFn] = {
     "development_activity": development_project.load,
     "ptv_gtfs": transport_stop.load,
     "clue_blocks": clue_block.load,
+    "employment_by_block": employment_block.load,
 }

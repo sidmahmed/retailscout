@@ -278,10 +278,27 @@ and multi-schema layouts do not autogenerate well). Run with
    worker-demand FEATURE: allocate jobs via polygon intersection, not by
    assuming a block centroid lies inside its block or the boundary.
    3 new tests (63 total in jobs/, up from 60).
-8. `0008` — `core.employment_block` (jobs per block per census year) +
-   its loader, joining `clue_block` on `block_id`. Suppression
-   semantics: null = suppressed, 0 = observed zero — NEVER coalesce
-   (registry note + invariant 4).
+8. `0008` ✔ `core.employment_block` — CLUE jobs per block per census
+   year (§16.3 fact_employment_block_snapshot), the worker-demand fact.
+   Loader `jobs/retailscout_jobs/transform/employment_block.py`
+   (registered as `employment_by_block`), upsert on the natural key
+   `(census_year, block_id)`. THE POINT OF THIS TABLE IS SUPPRESSION
+   (invariant 4): an empty CSV cell = a suppressed count → NULL; "0" =
+   an observed zero → 0; never conflated, and a suppressed total is
+   never reconstructed by summing the (also partially-suppressed)
+   industry columns. `total_jobs` is nullable — 133 of 603 blocks have
+   a suppressed total in 2024, so the worker-demand feature must treat
+   those as UNKNOWN, not zero. The 20 ANZSIC-division counts live in
+   `jobs_by_industry jsonb` (JSON null vs 0 preserves the distinction —
+   the development_project pattern), not 20 speculative columns. NO FK
+   to `clue_block` (pedestrian_observation precedent — a hard FK to a
+   current-snapshot dimension would break loading historical rows);
+   block_id is indexed instead. Verified against live PostGIS: 13,519
+   rows; 2024 `total_jobs` NULL=133 / =0 for 80 / >0 for 390 (matches
+   the raw profile exactly); jsonb null-vs-0 preserved
+   (`jsonb_typeof` = 'null' vs 'number'); all 603 2024 blocks join to
+   `clue_block` with 520,544 known jobs (plausible CBD employment).
+   3 new tests (66 total in jobs/, up from 63).
 9. `0009` — remaining `analytics.location_feature` columns as their
    families land (worker demand `jobs_400m`/`jobs_800m`, pedestrian
    demand, development) + `analytics.location_score`
