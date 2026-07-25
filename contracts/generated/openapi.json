@@ -1,0 +1,382 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "RetailScout API",
+    "description": "RetailScout runtime API. Serves precomputed location scores and evidence for the City of Melbourne. Data: City of Melbourne Open Data (attribution required \u2014 see /api/v1/data-sources when built).",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/api/v1/health": {
+      "get": {
+        "tags": [
+          "meta"
+        ],
+        "summary": "Health",
+        "description": "Liveness probe. Deliberately does not touch the database \u2014\na database outage must degrade features, not report the API dead.",
+        "operationId": "health_api_v1_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/locations/score": {
+      "get": {
+        "tags": [
+          "locations"
+        ],
+        "summary": "Get Location Score",
+        "description": "Score a candidate point for a business profile.\n\nContract notes for the implementer:\n- Validate the point against core.municipal_boundary FIRST; reject\n  out-of-boundary points with 400, never silently score them.\n- Map the point to its analytics.analysis_cell, then read the\n  precomputed analytics.location_score row for (cell, profile,\n  active score_version, active data_release).\n- No spatial computation beyond point-in-polygon + cell lookup\n  happens at request time.",
+        "operationId": "get_location_score_api_v1_locations_score_get",
+        "parameters": [
+          {
+            "name": "lat",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "number",
+              "maximum": 90,
+              "minimum": -90,
+              "description": "WGS84 latitude",
+              "title": "Lat"
+            },
+            "description": "WGS84 latitude"
+          },
+          {
+            "name": "lon",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "number",
+              "maximum": 180,
+              "minimum": -180,
+              "description": "WGS84 longitude",
+              "title": "Lon"
+            },
+            "description": "WGS84 longitude"
+          },
+          {
+            "name": "profile",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/BusinessProfile"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScoreResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Point outside the supported municipal boundary (FR-02)"
+          },
+          "501": {
+            "description": "Scoring pipeline not yet implemented"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "BusinessProfile": {
+        "type": "string",
+        "enum": [
+          "cafe",
+          "retail_shop",
+          "food_truck",
+          "pop_up"
+        ],
+        "title": "BusinessProfile"
+      },
+      "ComponentScore": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key",
+            "description": "e.g. pedestrian_demand, worker_demand, market_fit"
+          },
+          "score": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Score"
+          },
+          "weight": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Weight"
+          },
+          "evidence": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "object",
+            "title": "Evidence",
+            "description": "Raw supporting values and percentiles; nulls mean 'not observed'"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "score",
+          "weight"
+        ],
+        "title": "ComponentScore"
+      },
+      "Confidence": {
+        "properties": {
+          "score": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Score"
+          },
+          "band": {
+            "$ref": "#/components/schemas/ConfidenceBand"
+          },
+          "reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Reasons",
+            "description": "Human-readable evidence, e.g. 'Nearest sensor is 430 m away'"
+          }
+        },
+        "type": "object",
+        "required": [
+          "score",
+          "band",
+          "reasons"
+        ],
+        "title": "Confidence",
+        "description": "Shown separately from suitability \u2014 never blended invisibly."
+      },
+      "ConfidenceBand": {
+        "type": "string",
+        "enum": [
+          "high",
+          "medium",
+          "low",
+          "insufficient"
+        ],
+        "title": "ConfidenceBand"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "HealthResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "service": {
+            "type": "string",
+            "title": "Service"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "service"
+        ],
+        "title": "HealthResponse"
+      },
+      "ScoreLocation": {
+        "properties": {
+          "lat": {
+            "type": "number",
+            "maximum": 90.0,
+            "minimum": -90.0,
+            "title": "Lat"
+          },
+          "lon": {
+            "type": "number",
+            "maximum": 180.0,
+            "minimum": -180.0,
+            "title": "Lon"
+          },
+          "cell_id": {
+            "type": "string",
+            "title": "Cell Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "lat",
+          "lon",
+          "cell_id"
+        ],
+        "title": "ScoreLocation"
+      },
+      "ScoreResponse": {
+        "properties": {
+          "location": {
+            "$ref": "#/components/schemas/ScoreLocation"
+          },
+          "profile": {
+            "$ref": "#/components/schemas/BusinessProfile"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 100.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score",
+            "description": "Overall suitability. Null when critical evidence is missing \u2014 a withheld score is a valid product outcome, not an error."
+          },
+          "confidence": {
+            "$ref": "#/components/schemas/Confidence"
+          },
+          "components": {
+            "items": {
+              "$ref": "#/components/schemas/ComponentScore"
+            },
+            "type": "array",
+            "title": "Components"
+          },
+          "top_drivers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 3,
+            "title": "Top Drivers"
+          },
+          "top_risks": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 3,
+            "title": "Top Risks"
+          },
+          "score_version": {
+            "type": "string",
+            "title": "Score Version",
+            "description": "e.g. cafe-v1.0.0"
+          },
+          "data_release": {
+            "type": "string",
+            "title": "Data Release",
+            "description": "e.g. melbourne-2026-07-25"
+          },
+          "generated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Generated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "location",
+          "profile",
+          "confidence",
+          "components",
+          "score_version",
+          "data_release",
+          "generated_at"
+        ],
+        "title": "ScoreResponse"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}

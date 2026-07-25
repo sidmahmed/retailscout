@@ -1,0 +1,38 @@
+[project]
+name = "retailscout-api"
+version = "0.1.0"
+description = "RetailScout runtime API. LEAN by design — must fit a Vercel Function. No GeoPandas/Polars/H3 here, ever (they live in jobs/)."
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "sqlalchemy>=2.0",
+    "psycopg[binary]>=3.1",
+    "uvicorn>=0.30",
+]
+# Add when first used (still lean): "geoalchemy2", "structlog", "httpx"
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "httpx>=0.27",   # FastAPI TestClient transport
+    "ruff>=0.5",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

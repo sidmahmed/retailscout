@@ -1,0 +1,55 @@
+@import "tailwindcss";
+
+/*
+ * RetailScout design tokens — the single source of truth is
+ * context/ui-context.md. Components must reference these variables;
+ * hardcoded hex values are a code-standards violation.
+ *
+ * Score colors (--score-*) and confidence colors (--confidence-*) are
+ * deliberately distinct palettes so a low-confidence HIGH score never
+ * reads like a low score. Never substitute one family for the other,
+ * and never use --state-* for score/confidence meaning.
+ */
+:root {
+  /* Surfaces */
+  --bg-base: #f7f8fa;
+  --bg-surface: #ffffff;
+  --bg-surface-muted: #eef1f4;
+
+  /* Text */
+  --text-primary: #14181f;
+  --text-muted: #5b6472;
+
+  /* Brand / interaction */
+  --accent-primary: #1d6f5c;
+  --border-default: #dce1e6;
+
+  /* Suitability score bands (0-33 / 34-66 / 67-100) */
+  --score-low: #c4462b;
+  --score-mid: #d3a324;
+  --score-high: #1d6f5c;
+
+  /* Data-confidence bands — warm/neutral family, distinct from score */
+  --confidence-high: #1d6f5c;
+  --confidence-medium: #d3a324;
+  --confidence-low: #b36a17;
+  --confidence-insufficient: #8a93a1;
+
+  /* Generic states */
+  --state-error: #c4462b;
+  --state-success: #1d6f5c;
+
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+}
+
+body {
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+}
+
+/* All score values and comparison tables align numerals in columns. */
+.numeric {
+  font-variant-numeric: tabular-nums;
+}

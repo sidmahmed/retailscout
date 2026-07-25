@@ -1,0 +1,206 @@
+"""Data-worker CLI.
+
+    python -m retailscout_jobs.cli list
+    python -m retailscout_jobs.cli ingest <source_id>
+    python -m retailscout_jobs.cli adopt <source_id> --retrieved-date YYYY-MM-DD \
+        --note "where these files came from" FILE [FILE...]
+    python -m retailscout_jobs.cli freshness <source_id>
+
+`ingest` downloads a full export and writes an immutable raw snapshot
+under RAW_DATA_DIR. `adopt` does the same for operator-provided files
+when a source's upstream feed is unusable (status: manual). Neither
+loads the database — staging loads are a separate pipeline stage
+(transform/), keeping "copy the bytes" and "interpret the bytes"
+independently re-runnable.
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import sys
+import tempfile
+from pathlib import Path
+
+from .opendatasoft import OpenDataSoftClient
+from .registry import SourceStatus, load_registry
+
+
+def _raw_root() -> Path:
+    return Path(os.environ.get("RAW_DATA_DIR", "../data/raw")).resolve()
+
+
+def cmd_list() -> int:
+    registry = load_registry()
+    for s in registry.sources:
+        print(f"{s.id:28} {s.status.value:12} {s.fetch_mode:8} {s.remote_dataset_id}")
+    return 0
+
+
+def cmd_ingest(source_id: str) -> int:
+    registry = load_registry()
+    source = registry.get(source_id)
+    defaults = registry.provider_defaults
+
+    if source.status == SourceStatus.BLOCKED:
+        print(f"REFUSING: '{source_id}' is blocked: {source.notes.strip()}", file=sys.stderr)
+        return 2
+    if source.status == SourceStatus.MANUAL:
+        print(
+            f"REFUSING: '{source_id}' is a manual source — its API feed is unusable. "
+            "Use `adopt` with operator-provided files instead.",
+            file=sys.stderr,
+        )
+        return 2
+    if source.status == SourceStatus.DEFERRED:
+        print(
+            f"REFUSING: '{source_id}' is deferred: {source.notes.strip()}",
+            file=sys.stderr,
+        )
+        return 2
+    if source.status == SourceStatus.UNVALIDATED:
+        print(
+            f"WARNING: '{source_id}' is unvalidated — profile fields after this run "
+            "and update sources.yaml.",
+            file=sys.stderr,
+        )
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=f".{source.export_format}") as tmp:
+        tmp_path = Path(tmp.name)
+
+    if source.fetch_mode == "http_file":
+        assert source.download_url is not None  # guaranteed by registry validator
+        url = source.download_url
+        print(f"Fetching {url}")
+        _download_file(url, tmp_path)
+    else:
+        url = (
+            f"{defaults.base_url}/catalog/datasets/{source.remote_dataset_id}"
+            f"/exports/{source.export_format}"
+        )
+        print(f"Fetching {url}")
+        with OpenDataSoftClient(base_url=defaults.base_url) as client:
+            client.export(source.remote_dataset_id, source.export_format, tmp_path)
+
+    from .snapshot import write_snapshot
+
+    target = write_snapshot(
+        raw_root=_raw_root(),
+        provider=registry.provider_for(source),
+        source_id=source.id,
+        remote_dataset_id=source.remote_dataset_id,
+        source_url=url,
+        data_file=tmp_path,
+        export_format=source.export_format,
+        fields=source.fields_observed,
+        retrieval_mode="http_download" if source.fetch_mode == "http_file" else "api_export",
+    )
+    print(f"Snapshot written: {target}")
+    return 0
+
+
+def _download_file(url: str, destination: Path, timeout: float = 600.0) -> None:
+    """Stream a plain HTTP(S) file (e.g. the PTV GTFS zip) to disk."""
+    import httpx
+
+    with (
+        httpx.stream("GET", url, timeout=timeout, follow_redirects=True) as response,
+        open(destination, "wb") as f,
+    ):
+        response.raise_for_status()
+        for chunk in response.iter_bytes():
+            f.write(chunk)
+
+
+def cmd_adopt(source_id: str, files: list[str], retrieved_date: str, note: str) -> int:
+    import datetime as dt
+
+    from .snapshot import adopt_snapshot
+
+    registry = load_registry()
+    source = registry.get(source_id)
+    defaults = registry.provider_defaults
+
+    if source.status != SourceStatus.MANUAL:
+        print(
+            f"REFUSING: '{source_id}' has status '{source.status.value}', not 'manual'. "
+            "adopt is only for sources whose upstream feed is unusable — "
+            "use `ingest`, or change the status in sources.yaml deliberately.",
+            file=sys.stderr,
+        )
+        return 2
+
+    target = adopt_snapshot(
+        raw_root=_raw_root(),
+        provider=defaults.provider,
+        source_id=source.id,
+        remote_dataset_id=source.remote_dataset_id,
+        source_files=[Path(f) for f in files],
+        export_format=source.export_format,
+        fields=source.fields_observed,
+        note=note,
+        retrieved_date=dt.date.fromisoformat(retrieved_date),
+    )
+    print(f"Snapshot written: {target}")
+    return 0
+
+
+def cmd_freshness(source_id: str) -> int:
+    registry = load_registry()
+    source = registry.get(source_id)
+
+    if source.freshness.strategy == "http_header":
+        import httpx
+
+        assert source.download_url is not None
+        response = httpx.head(source.download_url, timeout=30, follow_redirects=True)
+        response.raise_for_status()
+        print(f"{source_id}: Last-Modified = {response.headers.get('last-modified')}")
+        return 0
+
+    with OpenDataSoftClient(base_url=registry.provider_defaults.base_url) as client:
+        if source.freshness.strategy == "max_field":
+            assert source.freshness.field is not None
+            value = client.max_field_value(source.remote_dataset_id, source.freshness.field)
+            print(f"{source_id}: max({source.freshness.field}) = {value}")
+        else:
+            meta = client.dataset_metadata(source.remote_dataset_id)
+            modified = meta.get("metas", {}).get("default", {}).get("modified")
+            print(f"{source_id}: metas.modified = {modified} (treat with suspicion)")
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(prog="retailscout-jobs")
+    sub = parser.add_subparsers(dest="command", required=True)
+    sub.add_parser("list", help="List registered sources")
+    p_ingest = sub.add_parser("ingest", help="Snapshot one source to RAW_DATA_DIR")
+    p_ingest.add_argument("source_id")
+    p_adopt = sub.add_parser(
+        "adopt", help="Snapshot operator-provided files for a status:manual source"
+    )
+    p_adopt.add_argument("source_id")
+    p_adopt.add_argument("files", nargs="+", help="Local files to adopt (copied, not moved)")
+    p_adopt.add_argument(
+        "--retrieved-date",
+        required=True,
+        help="ISO date the operator obtained the files (data provenance, not today)",
+    )
+    p_adopt.add_argument("--note", required=True, help="Where the files came from")
+    p_fresh = sub.add_parser("freshness", help="Probe upstream freshness for one source")
+    p_fresh.add_argument("source_id")
+
+    args = parser.parse_args(argv)
+    if args.command == "list":
+        return cmd_list()
+    if args.command == "ingest":
+        return cmd_ingest(args.source_id)
+    if args.command == "adopt":
+        return cmd_adopt(args.source_id, args.files, args.retrieved_date, args.note)
+    if args.command == "freshness":
+        return cmd_freshness(args.source_id)
+    return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

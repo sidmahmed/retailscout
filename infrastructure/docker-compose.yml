@@ -1,0 +1,26 @@
+# Local development database. Matches database-architecture.md.
+# Extensions (postgis, pg_trgm) are created by Alembic migration 0001,
+# not here — so local and Supabase environments stay identical.
+services:
+  database:
+    # imresamu/postgis = multi-arch (arm64) build of the official PostGIS
+    # images; the official postgis/postgis has no arm64 manifests, which
+    # breaks Apple Silicon. CI uses postgis/postgis:17-3.5 (amd64 runners)
+    # — keep the version pins in lockstep.
+    image: imresamu/postgis:17-3.5
+    environment:
+      POSTGRES_DB: retailscout
+      POSTGRES_USER: retailscout
+      POSTGRES_PASSWORD: local-development-only
+    ports:
+      - "5432:5432"
+    volumes:
+      - retailscout_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U retailscout -d retailscout"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  retailscout_postgres:

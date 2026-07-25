@@ -1,0 +1,478 @@
+# RetailScout source registry — City of Melbourne Open Data.
+#
+# This file is the single source of truth for what we ingest and how.
+# Loaded and validated by retailscout_jobs.registry. Schema of each entry
+# is the SourceDefinition model in retailscout_jobs/registry.py.
+#
+# Facts below were validated against the live Explore v2.1 API on
+# 2026-07-25 (see context/progress-tracker.md "Data validation findings").
+# fields_observed lists the field names THE API ACTUALLY RETURNS — use
+# these when writing staging loaders, not the names in the architecture
+# doc (several differ, e.g. hourly counts use location_id/hourday, not
+# sensor_id/hour).
+#
+# fetch_mode:
+#   export  — bulk download via /exports/{format}. REQUIRED for anything
+#             over ~10k rows: /records caps at limit=100, offset<10000.
+#   records — paginated /records queries; only for small tables or
+#             incremental/metadata checks.
+#
+# status:
+#   active      — validated, has data, ingest it
+#   blocked     — exists but unusable today; do NOT build features on it
+#   unvalidated — id resolved but metadata/fields not yet profiled
+
+version: 1
+provider_defaults:
+  provider: city_of_melbourne
+  base_url: https://data.melbourne.vic.gov.au/api/explore/v2.1
+  attribution: "City of Melbourne Open Data"
+  timezone: Australia/Melbourne
+
+sources:
+  - id: pedestrian_hourly
+    remote_dataset_id: pedestrian-counting-system-monthly-counts-per-hour
+    title: Pedestrian Counting System (counts per hour)
+    capability: Daypart demand, weekday/weekend pattern, seasonality, trend
+    fetch_mode: export
+    export_format: csv
+    expected_cadence: daily
+    primary_keys: [location_id, sensing_date, hourday]
+    geometry: point
+    licence: UNVERIFIED   # API returns license: null — every sibling dataset is CC BY.
+                          # BLOCKER for public attribution: confirm on portal before beta.
+    status: active
+    freshness:
+      strategy: max_field
+      field: sensing_date  # metas.modified is stale (2024) — never trust it
+    records_count_at_validation: 1610006
+    fields_observed: [id, location_id, sensing_date, hourday, direction_1,
+                      direction_2, pedestriancount, sensor_name, location]
+    notes: >
+      Data observed through 2026-07-24 at validation (fresher than the
+      doc's "monthly" claim). Observed zero is a real count of 0;
+      absence of a row is an outage — never conflate. Join to
+      pedestrian_sensor_locations via location_id and respect
+      sensor-location validity periods.
+
+  - id: pedestrian_sensor_locations
+    remote_dataset_id: pedestrian-counting-system-sensor-locations
+    title: Pedestrian Counting System — Sensor Locations
+    capability: Sensor position, status, direction labels, install history
+    fetch_mode: export
+    export_format: json
+    expected_cadence: daily_check
+    primary_keys: [location_id]
+    geometry: point
+    licence: CC BY
+    status: active
+    freshness:
+      strategy: metadata
+    records_count_at_validation: 134
+    fields_observed: [location_id, sensor_description, sensor_name,
+                      installation_date, note, location_type, status,
+                      direction_1, direction_2, latitude, longitude, location]
+    notes: >
+      Sensors move and are decommissioned; historical counts must join to
+      the correct location period. status field distinguishes active
+      sensors — required by the confidence model.
+
+  - id: transport_activity
+    remote_dataset_id: transport-activity-counts
+    title: Transport Activity Counts
+    capability: 5-minute multimodal activity (pedestrian/cyclist/escooter/
+      vehicle classes) near monitored corridors — HISTORICAL archive
+    fetch_mode: export        # nominal only while status is manual
+    export_format: csv
+    expected_cadence: manual  # operator-supplied archives; API feed dead
+    primary_keys: [countLocationId, countlineName, from, class]
+    geometry: point
+    licence: CC BY
+    status: manual
+    freshness:
+      strategy: max_field
+      field: from
+    records_count_at_validation: 0   # via API; bulk archives have data
+    # Bulk-archive CSV header (the schema we actually load). Differs from
+    # the API metadata field list: no countin/countout directional split,
+    # different casing (countLocationId vs countlocationid), extra
+    # year/quarter columns, no skip_record.
+    fields_observed: [countLocationId, countlineName, countlineDirection,
+                      CountLocationLat, CountLocationLong, "from", to,
+                      class, count, year, quarter]
+    notes: >
+      API BLOCKED 2026-07-25 (total_count=0 via /records, /exports AND
+      count(*)), but operator-downloaded yearly bulk archives
+      (TransportActivityCount_2023..2026.zip, retrieved 2026-05-11,
+      ~3.4 GB uncompressed CSV) cover 2023-01 through 2026-05-11 and are
+      adopted into the raw layout via `cli adopt`. CAVEATS for the
+      transform stage: (1) timestamps are UTC ("Z") — convert to
+      Australia/Melbourne BEFORE deriving dates/dayparts or every peak
+      lands on the wrong local day; (2) absence of a (location, interval,
+      class) row is ambiguous missingness, never zero (architecture doc
+      §4.2); (3) archive is frozen at 2026-05-11 — freshness/confidence
+      must reflect that staleness and the "current activity" layer stays
+      deferred until a live feed returns; (4) 14 observed classes incl.
+      escooter, emergency_*, fire_engine — map via versioned config, not
+      code. Re-check the API feed periodically; if it revives, flip
+      status back to active and reconcile schema drift vs the archives.
+
+  - id: business_establishments
+    remote_dataset_id: business-establishments-with-address-and-industry-classification
+    title: Business establishments location and industry classification
+    capability: Competitor/complementary business points via ANZSIC4
+    fetch_mode: export
+    export_format: csv
+    expected_cadence: annual   # weekly metadata check for new census_year
+    primary_keys: null
+    geometry: point
+    licence: CC BY
+    status: active
+    freshness:
+      strategy: max_field
+      field: census_year
+    records_count_at_validation: 413550
+    fields_observed: [census_year, block_id, property_id, base_property_id,
+                      clue_small_area, trading_name, business_address,
+                      industry_anzsic4_code, industry_anzsic4_description,
+                      longitude, latitude, point]
+    notes: >
+      No stable natural key — (census_year, property_id, trading_name,
+      industry_anzsic4_code) is not guaranteed unique; profile duplicates
+      during staging before choosing a synthetic key. census_year 2024
+      confirmed present. Multi-year history in one dataset: filter by
+      census_year, keep all years for trend features.
+
+  - id: cafe_seats
+    remote_dataset_id: cafes-and-restaurants-with-seating-capacity
+    title: Café, restaurant, bistro seats
+    capability: Hospitality competition and capacity proxy
+    fetch_mode: export
+    export_format: csv
+    expected_cadence: annual
+    primary_keys: null
+    geometry: point
+    licence: CC BY
+    status: active
+    freshness:
+      strategy: max_field
+      field: census_year
+    records_count_at_validation: 66356
+    fields_observed: [census_year, block_id, property_id, base_property_id,
+                      building_address, clue_small_area, trading_name,
+                      business_address, industry_anzsic4_code,
+                      industry_anzsic4_description, seating_type,
+                      number_of_seats, longitude, latitude, location]
+    notes: >
+      seating_type distinguishes indoor/outdoor — keep both; capacity
+      pressure uses the sum per catchment.
+
+  - id: employment_by_block
+    remote_dataset_id: employment-by-block-by-clue-industry
+    title: Jobs per CLUE industry for blocks
+    capability: Worker-demand catchments and industry mix
+    fetch_mode: export
+    export_format: csv
+    expected_cadence: annual
+    primary_keys: [census_year, block_id]
+    geometry: none   # join to clue_blocks on block_id
+    licence: CC BY
+    status: active
+    freshness:
+      strategy: max_field
+      field: census_year
+    records_count_at_validation: 13519
+    fields_observed: [census_year, block_id, clue_small_area, accommodation,
+                      admin_and_support_services, agriculture_and_mining,
+                      arts_and_recreation_services, business_services,
+                      construction, education_and_training,
+                      electricity_gas_water_and_waste_services,
+                      finance_and_insurance, food_and_beverage_services,
+                      health_care_and_social_assistance,
+                      information_media_and_telecommunications, manufacturing,
+                      other_services, public_administration_and_safety,
+                      real_estate_services, rental_and_hiring_services,
+                      retail_trade, transport_postal_and_storage,
+                      wholesale_trade, total_jobs_in_block]
+    notes: >
+      VERIFIED: suppressed cells arrive as null, observed zeros as 0 —
+      the distinction is real in the API. Load industry columns as
+      nullable integers; NEVER coalesce to 0. Prefer total_jobs_in_block
+      for totals rather than summing partially-suppressed columns.
+
+  - id: establishments_per_block
+    remote_dataset_id: business-establishments-per-block-by-anzsic
+    title: Business establishments per ANZSIC for blocks
+    capability: Block-level market density and historical trend
+    fetch_mode: export
+    export_format: csv
+    expected_cadence: annual
+    primary_keys: [census_year, block_id]
+    geometry: none
+    licence: CC BY
+    status: active
+    freshness:
+      strategy: max_field
+      field: census_year
+    records_count_at_validation: 13519
+    fields_observed: [census_year, block_id, clue_small_area,
+                      accommodation_and_food_services,
+                      administrative_and_support_services,
+                      agriculture_forestry_and_fishing,
+                      arts_and_recreation_services, construction,
+                      education_and_training,
+                      electricity_gas_water_and_waste_services,
+                      financial_and_insurance_services,
+                      health_care_and_social_assistance,
+                      information_media_and_telecommunications, manufacturing,
+                      mining, other_services,
+                      professional_scientific_and_technical_services,
+                      public_administration_and_safety,
+                      rental_hiring_and_real_estate_services, retail_trade,
+                      transport_postal_and_warehousing, wholesale_trade,
+                      total_establishments_in_block]
+    notes: Same suppression semantics as employment_by_block.
+
+  - id: clue_blocks
+    remote_dataset_id: blocks-for-census-of-land-use-and-employment-clue
+    title: Blocks for CLUE
+    capability: Geometry to join block-level CLUE facts against
+    fetch_mode: export
+    export_format: json   # keep geo_shape as GeoJSON, not flattened CSV
+    expected_cadence: monthly_check
+    primary_keys: [block_id]
+    geometry: polygon
+    licence: CC BY
+    status: active
+    freshness:
+      strategy: metadata
+    records_count_at_validation: 603
+    fields_observed: [geo_point_2d, geo_shape, block_id, region_name, area_name]
+    notes: >
+      Council realigned block boundaries during 2025 — version geometries
+      with validity intervals; block_id + shape is NOT stable across all
+      census years.
+
+  - id: development_activity
+    remote_dataset_id: development-activity-monitor
+    title: Development Activity Monitor
+    capability: Planned/approved/under-construction/completed supply nearby
+    fetch_mode: export
+    export_format: csv
+    expected_cadence: monthly
+    primary_keys: [development_key]
+    geometry: point
+    licence: CC BY
+    status: active
+    freshness:
+      strategy: metadata   # modified was current (2026-07-16) at validation
+    records_count_at_validation: 1438
+    fields_observed: [data_format, development_key, status, year_completed,
+                      clue_small_area, clue_block, street_address, property_id,
+                      property_id_2, property_id_3, property_id_4,
+                      property_id_5, floors_above, resi_dwellings, studio_dwe,
+                      one_bdrm_dwe, two_bdrm_dwe, three_bdrm_dwe,
+                      student_apartments, student_beds,
+                      student_accommodation_units, institutional_accom_beds,
+                      hotel_rooms, serviced_apartments,
+                      hotels_serviced_apartments, hostel_beds,
+                      childcare_places, office_flr, retail_flr, industrial_flr,
+                      storage_flr, education_flr, hospital_flr, recreation_flr,
+                      publicdispaly_flr, community_flr, car_spaces,
+                      bike_spaces, town_planning_application, longitude,
+                      latitude, geopoint]
+    notes: >
+      development_key assumed unique — verify during staging. Status is
+      indicative; scoring applies status-probability factors from config,
+      never treats pipeline as guaranteed demand. Note council's own typo
+      in field name "publicdispaly_flr".
+
+  - id: pedestrian_network
+    remote_dataset_id: pedestrian-network
+    title: Pedestrian Network
+    capability: Network-distance catchments, route-aware proximity
+    fetch_mode: export
+    export_format: json   # linestring geometries
+    expected_cadence: monthly_check
+    primary_keys: [objectid]
+    geometry: linestring
+    licence: CC BY
+    status: active
+    freshness:
+      strategy: metadata
+    records_count_at_validation: 85326
+    fields_observed: [geo_point_2d, geo_shape, objectid, neworkid]
+    notes: >
+      Field is literally "neworkid" (council typo), not "networkid".
+      Last modified 2019 — treat as static; MVP may start with geodesic
+      buffers labelled approximate (open question in progress-tracker).
+
+  - id: parking_bays
+    remote_dataset_id: on-street-parking-bays
+    title: On-street Parking Bays
+    capability: Bay density / spatial access proxy (LOW-WEIGHT, caveated)
+    fetch_mode: export
+    export_format: csv
+    expected_cadence: monthly_check
+    primary_keys: [kerbsideid]
+    geometry: point
+    licence: CC BY
+    status: active
+    freshness:
+      strategy: max_field
+      field: lastupdated
+    records_count_at_validation: 29053
+    fields_observed: [roadsegmentid, kerbsideid, roadsegmentdescription,
+                      latitude, longitude, lastupdated, location]
+    notes: >
+      Council flags incomplete/outdated coverage ("Static" quality meta).
+      Parking is a low-weight supporting signal only — never decisive.
+      kerbsideid uniqueness to be confirmed in staging.
+
+  - id: parking_bay_sensors
+    remote_dataset_id: on-street-parking-bay-sensors
+    title: On-street Parking Bay Sensors
+    capability: Optional live/historical parking-availability indicator
+    fetch_mode: export
+    export_format: json
+    expected_cadence: optional_15min
+    primary_keys: [kerbsideid]
+    geometry: point
+    licence: CC BY
+    status: active
+    freshness:
+      strategy: max_field
+      field: status_timestamp
+    records_count_at_validation: 3391
+    fields_observed: [lastupdated, status_timestamp, zone_number,
+                      status_description, kerbsideid, location]
+    notes: Post-MVP nice-to-have. Do not ingest on a schedule until the
+      current-parking layer is actually being built.
+
+  - id: municipal_boundary
+    remote_dataset_id: municipal-boundary
+    title: Municipal boundary
+    capability: FR-02 boundary validation; clips the analysis grid
+    fetch_mode: export
+    export_format: json
+    expected_cadence: monthly_check
+    primary_keys: [mccid_int]
+    geometry: polygon
+    licence: CC BY
+    status: active
+    freshness:
+      strategy: metadata
+    records_count_at_validation: 1
+    fields_observed: [geo_point_2d, geo_shape, mccid_gis, maplabel, name,
+                      xorg, mccid_str, xsource, xdate, mccid_int]
+    notes: Resolved during validation — the architecture doc had no id
+      for this. Single polygon; load first, everything spatial depends on it.
+
+  # --- Public transport: PTV GTFS (decision 2026-07-25) -----------------
+  # The council-only transport datasets below are DEFERRED: tram_tracks
+  # has geometry but no stops, city_circle_* covers only the free tourist
+  # loop, bus_stops covers a minor mode — while trains and regular tram
+  # stops (the modes that define CBD access) appear in none of them.
+  # PTV GTFS covers all stops, routes and scheduled frequencies statewide.
+
+  - id: ptv_gtfs
+    remote_dataset_id: ptv-gtfs-schedule
+    title: PTV GTFS Schedule (Transport Victoria)
+    capability: Transport access — all train/tram/bus stops, routes and
+      scheduled departures by daypart; replaces council-only proxies
+    fetch_mode: http_file
+    download_url: https://data.ptv.vic.gov.au/downloads/gtfs.zip
+    provider: transport_victoria
+    attribution: "Public Transport Victoria (Department of Transport and Planning)"
+    export_format: zip
+    expected_cadence: weekly_check
+    primary_keys: null   # GTFS is a multi-table standard; keys per inner table
+    geometry: mixed      # stops are points; shapes are polylines
+    licence: CC BY 4.0   # per Transport Victoria open-data terms — verify on
+                         # the data.vic listing before beta attribution ships
+    status: active
+    freshness:
+      strategy: http_header   # Last-Modified on the zip (2026-07-23 at adoption)
+    records_count_at_validation: null   # 286 MB zip verified live 2026-07-25
+    fields_observed: null   # standard GTFS files: stops.txt, routes.txt,
+                            # trips.txt, stop_times.txt, calendar.txt, ...
+    notes: >
+      NESTED zip: top level contains numbered mode folders (2 = metro
+      train, 3 = metro tram, 4 = metro bus, ...), each holding its own
+      google_transit.zip — the transform stage must unpack two levels.
+      Statewide coverage: filter stops to the municipal boundary plus a
+      ~1 km buffer before loading core.transport_stop. stop_times.txt is
+      large — stream it, never read whole into memory. Timezone in
+      agency.txt is Australia/Melbourne (local, unlike transport_activity
+      which is UTC). Service frequency by daypart comes from
+      stop_times x calendar, giving the access score real departures
+      rather than stop proximity alone.
+
+  - id: bus_stops
+    remote_dataset_id: bus-stops
+    title: Bus stops
+    capability: (Superseded) council-only transport proxy
+    fetch_mode: export
+    export_format: json
+    expected_cadence: none
+    primary_keys: null
+    geometry: point
+    licence: UNVERIFIED
+    status: deferred
+    freshness:
+      strategy: metadata
+    records_count_at_validation: null
+    fields_observed: null
+    notes: Deferred 2026-07-25 — superseded by ptv_gtfs. Only revisit if
+      GTFS falls through.
+
+  - id: tram_tracks
+    remote_dataset_id: tram-tracks
+    title: Tram tracks
+    capability: (Superseded) council-only transport proxy — geometry only, no stops
+    fetch_mode: export
+    export_format: json
+    expected_cadence: none
+    primary_keys: null
+    geometry: linestring
+    licence: UNVERIFIED
+    status: deferred
+    freshness:
+      strategy: metadata
+    records_count_at_validation: null
+    fields_observed: null
+    notes: Deferred 2026-07-25 — superseded by ptv_gtfs.
+
+  - id: city_circle_tram_route
+    remote_dataset_id: city-circle-tram-route
+    title: City Circle tram route
+    capability: (Superseded) tourist-loop route line
+    fetch_mode: export
+    export_format: json
+    expected_cadence: none
+    primary_keys: null
+    geometry: linestring
+    licence: UNVERIFIED
+    status: deferred
+    freshness:
+      strategy: metadata
+    records_count_at_validation: null
+    fields_observed: null
+    notes: Deferred 2026-07-25 — superseded by ptv_gtfs.
+
+  - id: city_circle_tram_stops
+    remote_dataset_id: city-circle-tram-stops
+    title: City Circle tram stops
+    capability: (Superseded) tourist-loop stops
+    fetch_mode: export
+    export_format: json
+    expected_cadence: none
+    primary_keys: null
+    geometry: point
+    licence: UNVERIFIED
+    status: deferred
+    freshness:
+      strategy: metadata
+    records_count_at_validation: null
+    fields_observed: null
+    notes: Deferred 2026-07-25 — superseded by ptv_gtfs.

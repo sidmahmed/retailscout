@@ -1,0 +1,101 @@
+# Golden locations — fixed reference points re-scored on every data/score
+# release (architecture doc §20.3, §21.2). They catch regressions like
+# "the CBD scored below a residential back street after a refresh".
+#
+# STATUS: starter set, coordinates are approximate (picked from public
+# knowledge of Melbourne, NOT surveyed). Before first use in release
+# validation: verify each point falls in the intended precinct, snap to
+# the analysis cell, and fill expectations from the first trusted
+# scoring run + local review (Phase 2 exit criterion).
+#
+# `expectations` are deliberately qualitative bands, not exact numbers —
+# exact-score assertions would fail on every legitimate data refresh.
+#   activity_band: very_high | high | medium | low
+#   relative rules are checked pairwise by the release-validation job.
+
+version: 0  # bump to 1 once coordinates + expectations are validated
+
+locations:
+  - id: bourke_st_mall
+    label: Bourke Street Mall
+    lat: -37.8135
+    lon: 144.9645
+    rationale: Peak retail pedestrian spine; should rank near the top city-wide.
+    expectations: { activity_band: very_high, cafe_competition: very_high }
+
+  - id: degraves_st
+    label: Degraves Street laneway
+    lat: -37.8176
+    lon: 144.9656
+    rationale: Iconic café laneway — strong morning/lunch daypart signal expected.
+    expectations: { activity_band: very_high, cafe_competition: very_high }
+
+  - id: flinders_st_station
+    label: Flinders Street Station forecourt
+    lat: -37.8183
+    lon: 144.9671
+    rationale: Transport-anchored flows; strong commuter daypart pattern.
+    expectations: { activity_band: very_high }
+
+  - id: southern_cross
+    label: Southern Cross Station / Collins St west
+    lat: -37.8184
+    lon: 144.9525
+    rationale: Weekday-commuter skew; weekend drop should be visible.
+    expectations: { activity_band: high, weekday_weekend_skew: weekday }
+
+  - id: qvm
+    label: Queen Victoria Market
+    lat: -37.8076
+    lon: 144.9568
+    rationale: Market-day/weekend peaks; complementary food cluster.
+    expectations: { activity_band: high }
+
+  - id: southbank_promenade
+    label: Southbank promenade
+    lat: -37.8206
+    lon: 144.9646
+    rationale: Leisure/evening/weekend skew vs CBD commuter pattern.
+    expectations: { activity_band: high, weekday_weekend_skew: weekend_evening }
+
+  - id: lygon_st_carlton
+    label: Lygon Street, Carlton
+    lat: -37.7983
+    lon: 144.9670
+    rationale: Established hospitality destination cluster outside the Hoddle grid.
+    expectations: { activity_band: medium, cafe_competition: high }
+
+  - id: parkville_uni
+    label: University of Melbourne, Parkville
+    lat: -37.7963
+    lon: 144.9614
+    rationale: Semester-driven seasonality; education worker/student demand.
+    expectations: { activity_band: medium, seasonality: academic }
+
+  - id: docklands_victoria_harbour
+    label: Docklands / Victoria Harbour
+    lat: -37.8203
+    lon: 144.9450
+    rationale: Office-heavy, lower after-hours activity; development pipeline nearby.
+    expectations: { activity_band: medium, weekday_weekend_skew: weekday }
+
+  - id: royal_botanic_edge
+    label: Domain / Botanic Gardens edge (Anderson St)
+    lat: -37.8290
+    lon: 144.9800
+    rationale: Deliberate low-activity control point — must NOT outscore the CBD.
+    expectations: { activity_band: low }
+
+  - id: west_melbourne_residential
+    label: West Melbourne residential streets
+    lat: -37.8060
+    lon: 144.9450
+    rationale: Quiet residential control; low confidence likely (sparse sensors).
+    expectations: { activity_band: low, confidence: low_or_insufficient }
+
+  - id: outside_boundary_control
+    label: Richmond (outside City of Melbourne)
+    lat: -37.8230
+    lon: 145.0000
+    rationale: FR-02 control — scoring MUST refuse this point (400), not score it.
+    expectations: { rejected: true }
