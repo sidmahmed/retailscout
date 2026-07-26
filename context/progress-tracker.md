@@ -4,6 +4,17 @@ Update this file after every meaningful implementation change.
 
 ## Current Phase
 
+- GOLDEN LOCATIONS V1 IS LIVE (2026-07-26): all 11 in-boundary
+  reference locations are snapped to stable H3 resolution-10 cell IDs
+  and the Richmond FR-02 control remains explicitly outside coverage.
+  `jobs/tests/test_golden_locations.py` always validates the fixture
+  contract; when an active release exists it runs the real
+  `build_scores` path inside a rolled-back transaction and asserts
+  cell placement, pedestrian-activity bands, broad café-score ranges,
+  confidence bands, competition pressure, and pairwise ordering
+  margins. The gate passes against the 2,317-cell local release. Full
+  jobs verification: 106 tests pass; ruff lint and format checks pass.
+
 - COVERAGE-BOUNDED LOCATION SEARCH IS LIVE (2026-07-25): the top dock
   now has explicit-submit address/place search against Nominatim JSONv2,
   bounded to the municipal coverage box. Results are zod-validated,
@@ -104,30 +115,12 @@ Update this file after every meaningful implementation change.
 
 ## Current Goal
 
-- THE SCORING ENGINE IS LIVE (migration 0012, `analytics.location_score`)
-  — Phase 2's core deliverable. All 2,317 cells scored for all 4
-  business profiles, cross-checked against every golden-location control
-  point and ranking correctly end to end (see Completed). This is
-  arguably the first "whole product" milestone: every phase-1/2 data
-  source, feature, and the scoring formula now connect end to end from
-  raw council data to a suitability number with evidence.
-
-  NEXT — two remaining Phase-2-adjacent items before Phase 3
-  (product API/frontend) can properly start:
-  1. Formalise `tests/golden_locations/golden_locations.yaml` from
-     `version: 0` (approximate coords, qualitative-only) to `version: 1`
-     — snap each point to its real analysis cell, verify precinct
-     placement, and turn the now-observed real scores into an automated
-     regression test (a `pytest` that runs `build_scores` and asserts
-     each location's ordering/band holds) — §20.3/§21.2's actual
-     purpose, not just a manual eyeball check.
-  2. `backend/`'s `/api/v1/locations/score` is still a 501 stub
-     (deliberately, per Session Notes) — it can now be implemented for
-     real: read `analytics.location_score` + `analytics.analysis_cell`
-     for a point/profile and return the real `ScoreResponse` (§17.3),
-     since `explanation` is already stored in the exact shape the
-     contract expects. This is the first Phase 3 unit and the natural
-     next step.
+- THE SCORING ENGINE, RUNTIME API, FRONTEND CORE, AND GOLDEN-LOCATION
+  RELEASE GATE ARE LIVE. The scoring formula now has a repeatable
+  regression net before any weight or feature tuning. Remaining visible
+  frontend units are the mobile bottom sheet, confidence map overlay,
+  and high-zoom raw point layers; model work can now proceed one
+  isolated feature at a time against the golden controls.
 
 ## Completed
 
@@ -719,16 +712,15 @@ Each item is one unit of work (ai-workflow-rules.md). In order:
 7. ~~Scoring engine~~ **DONE 2026-07-25** — migration 0012,
    `analytics.location_score`, verified against every golden-location
    control point (see Completed). Phase 2's core deliverable is live.
-8. Formalise golden-location evaluation: `golden_locations.yaml`
-   `version: 0` → `1` (snap coords to real cells, verify precinct
-   placement) + an automated `pytest` regression test asserting
-   ordering/bands from a real `build_scores` run (§20.3/§21.2) — turns
-   the manual eyeball check just done into a repeatable release gate.
-9. Phase 3 begins: implement `backend/`'s `/api/v1/locations/score`
-   for real (currently a deliberate 501 stub) — read
-   `analytics.location_score` for a point/profile and return it as the
-   published `ScoreResponse` (§17.3); `explanation` is already stored
-   in the exact response shape.
+8. ~~Formalise golden-location evaluation~~ **DONE 2026-07-26**:
+   `golden_locations.yaml` v1 has stable snapped H3 cells, broad
+   qualitative guardrails, and explicit relative comparisons;
+   `test_golden_locations.py` runs the real scorer against an active
+   release and turns the manual check into the §20.3/§21.2 release gate.
+9. ~~Implement the real Phase 3 score API~~ **DONE 2026-07-25**:
+   `/api/v1/locations/score` resolves point → active cell and serves the
+   precomputed `analytics.location_score` explanation through the
+   published `ScoreResponse` contract.
 
 ## Definition of Done for any unit (copy of ai-workflow-rules.md gate)
 

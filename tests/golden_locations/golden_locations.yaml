@@ -1,101 +1,182 @@
-# Golden locations — fixed reference points re-scored on every data/score
-# release (architecture doc §20.3, §21.2). They catch regressions like
-# "the CBD scored below a residential back street after a refresh".
+# Golden locations — stable H3 controls re-scored on every data/score
+# release (architecture §20.3 / §21.2).
 #
-# STATUS: starter set, coordinates are approximate (picked from public
-# knowledge of Melbourne, NOT surveyed). Before first use in release
-# validation: verify each point falls in the intended precinct, snap to
-# the analysis cell, and fill expectations from the first trusted
-# scoring run + local review (Phase 2 exit criterion).
-#
-# `expectations` are deliberately qualitative bands, not exact numbers —
-# exact-score assertions would fail on every legitimate data refresh.
-#   activity_band: very_high | high | medium | low
-#   relative rules are checked pairwise by the release-validation job.
+# The in-boundary coordinates are H3 resolution-10 cell centroids, snapped
+# from the original public-landmark reference points against the trusted
+# 2026-07-26 local release. Qualitative activity bands use the pedestrian
+# component percentile, while total_score_range guards the complete café
+# suitability score. The ranges are deliberately broad enough for legitimate
+# data refreshes; relative comparisons catch implausible ordering changes.
 
-version: 0  # bump to 1 once coordinates + expectations are validated
+version: 1
+grid_resolution: 10
+default_profile: cafe
+
+activity_bands:
+  very_high: { min: 95 }
+  high: { min: 65, max: 94.9 }
+  medium: { min: 40, max: 64.9 }
+  low: { max: 39.9, allow_missing: true }
 
 locations:
   - id: bourke_st_mall
     label: Bourke Street Mall
-    lat: -37.8135
-    lon: 144.9645
+    cell_id: 8abe6356308ffff
+    lat: -37.813360
+    lon: 144.963869
     rationale: Peak retail pedestrian spine; should rank near the top city-wide.
-    expectations: { activity_band: very_high, cafe_competition: very_high }
+    expectations:
+      activity_band: very_high
+      total_score_range: { min: 75, max: 90 }
+      confidence_band: high
+      competition_score_max: 5
 
   - id: degraves_st
     label: Degraves Street laneway
-    lat: -37.8176
-    lon: 144.9656
-    rationale: Iconic café laneway — strong morning/lunch daypart signal expected.
-    expectations: { activity_band: very_high, cafe_competition: very_high }
+    cell_id: 8abe63563037fff
+    lat: -37.817011
+    lon: 144.965482
+    rationale: Iconic café laneway with a strong morning/lunch pedestrian signal.
+    expectations:
+      activity_band: very_high
+      total_score_range: { min: 72, max: 88 }
+      confidence_band: high
+      competition_score_max: 5
 
   - id: flinders_st_station
     label: Flinders Street Station forecourt
-    lat: -37.8183
-    lon: 144.9671
-    rationale: Transport-anchored flows; strong commuter daypart pattern.
-    expectations: { activity_band: very_high }
+    cell_id: 8abe63563117fff
+    lat: -37.818473
+    lon: 144.967610
+    rationale: Transport-anchored flows with a strong commuter pattern.
+    expectations:
+      activity_band: very_high
+      total_score_range: { min: 70, max: 86 }
+      confidence_band: high
 
   - id: southern_cross
     label: Southern Cross Station / Collins St west
-    lat: -37.8184
-    lon: 144.9525
-    rationale: Weekday-commuter skew; weekend drop should be visible.
-    expectations: { activity_band: high, weekday_weekend_skew: weekday }
+    cell_id: 8abe63563377fff
+    lat: -37.818454
+    lon: 144.952788
+    rationale: Strong weekday commuter demand and transport access.
+    expectations:
+      activity_band: high
+      total_score_range: { min: 70, max: 86 }
+      confidence_band: high
 
   - id: qvm
     label: Queen Victoria Market
-    lat: -37.8076
-    lon: 144.9568
-    rationale: Market-day/weekend peaks; complementary food cluster.
-    expectations: { activity_band: high }
+    cell_id: 8abe63563657fff
+    lat: -37.807758
+    lon: 144.956949
+    rationale: Major market destination with strong pedestrian and complementary demand.
+    expectations:
+      activity_band: high
+      total_score_range: { min: 60, max: 80 }
+      confidence_band: high
 
   - id: southbank_promenade
     label: Southbank promenade
-    lat: -37.8206
-    lon: 144.9646
-    rationale: Leisure/evening/weekend skew vs CBD commuter pattern.
-    expectations: { activity_band: high, weekday_weekend_skew: weekend_evening }
+    cell_id: 8abe63563177fff
+    lat: -37.820171
+    lon: 144.963916
+    rationale: High-activity leisure and evening destination outside the central retail spine.
+    expectations:
+      activity_band: high
+      total_score_range: { min: 70, max: 86 }
+      confidence_band: high
 
   - id: lygon_st_carlton
     label: Lygon Street, Carlton
-    lat: -37.7983
-    lon: 144.9670
+    cell_id: 8abe63544a8ffff
+    lat: -37.798041
+    lon: 144.967466
     rationale: Established hospitality destination cluster outside the Hoddle grid.
-    expectations: { activity_band: medium, cafe_competition: high }
+    expectations:
+      activity_band: medium
+      total_score_range: { min: 48, max: 66 }
+      confidence_band: high
+      competition_score_max: 15
 
   - id: parkville_uni
     label: University of Melbourne, Parkville
-    lat: -37.7963
-    lon: 144.9614
-    rationale: Semester-driven seasonality; education worker/student demand.
-    expectations: { activity_band: medium, seasonality: academic }
+    cell_id: 8abe63544347fff
+    lat: -37.796089
+    lon: 144.962160
+    rationale: Education and student precinct with moderate observed pedestrian demand.
+    expectations:
+      activity_band: medium
+      total_score_range: { min: 42, max: 60 }
+      confidence_band: medium
 
   - id: docklands_victoria_harbour
     label: Docklands / Victoria Harbour
-    lat: -37.8203
-    lon: 144.9450
-    rationale: Office-heavy, lower after-hours activity; development pipeline nearby.
-    expectations: { activity_band: medium, weekday_weekend_skew: weekday }
+    cell_id: 8abe6356ec1ffff
+    lat: -37.820632
+    lon: 144.944863
+    rationale: Office-heavy precinct with moderate foot traffic and a strong pipeline.
+    expectations:
+      activity_band: medium
+      total_score_range: { min: 54, max: 72 }
+      confidence_band: medium
 
   - id: royal_botanic_edge
     label: Domain / Botanic Gardens edge (Anderson St)
-    lat: -37.8290
-    lon: 144.9800
-    rationale: Deliberate low-activity control point — must NOT outscore the CBD.
-    expectations: { activity_band: low }
+    cell_id: 8abe6356070ffff
+    lat: -37.829432
+    lon: 144.979864
+    rationale: Deliberate low-activity control point that must not outscore the CBD.
+    expectations:
+      activity_band: low
+      total_score_range: { min: 20, max: 46 }
+      confidence_band: insufficient
 
   - id: west_melbourne_residential
     label: West Melbourne residential streets
-    lat: -37.8060
-    lon: 144.9450
-    rationale: Quiet residential control; low confidence likely (sparse sensors).
-    expectations: { activity_band: low, confidence: low_or_insufficient }
+    cell_id: 8abe6354585ffff
+    lat: -37.805795
+    lon: 144.944234
+    rationale: Quiet residential control with sparse pedestrian-sensor coverage.
+    expectations:
+      activity_band: low
+      total_score_range: { min: 38, max: 58 }
+      confidence_band: low
 
   - id: outside_boundary_control
     label: Richmond (outside City of Melbourne)
+    cell_id: null
     lat: -37.8230
     lon: 145.0000
-    rationale: FR-02 control — scoring MUST refuse this point (400), not score it.
-    expectations: { rejected: true }
+    rationale: FR-02 control — scoring must refuse this point rather than return a cell.
+    expectations:
+      rejected: true
+
+comparisons:
+  - id: central_activity_beats_controls
+    higher:
+      - bourke_st_mall
+      - degraves_st
+      - flinders_st_station
+    lower:
+      - royal_botanic_edge
+      - west_melbourne_residential
+    minimum_margin: 20
+
+  - id: major_destinations_beat_botanic_control
+    higher:
+      - southern_cross
+      - qvm
+      - southbank_promenade
+    lower:
+      - royal_botanic_edge
+    minimum_margin: 20
+
+  - id: moderate_precincts_beat_botanic_control
+    higher:
+      - lygon_st_carlton
+      - parkville_uni
+      - docklands_victoria_harbour
+    lower:
+      - royal_botanic_edge
+    minimum_margin: 8
