@@ -73,9 +73,49 @@ Copy `.env.example` to `.env` first.
   `sources.yaml`). Pedestrian hourly counts has **no licence in API
   metadata** (verify before beta).
 
-## Deployment shape (target)
+## Deployment
 
-Vercel (Next.js + lean FastAPI) → Supabase Postgres/PostGIS (Sydney,
-pooled port 6543 for runtime, direct 5432 for migrations/jobs) →
-S3-compatible object storage for raw snapshots → scheduled container
-(GitHub Actions initially) running `jobs/`.
+One Vercel project, two [Services](https://vercel.com/docs/services)
+under a single domain — `frontend/` (Next.js) and `backend/` (FastAPI,
+entrypoint `app.main:app`) — routed by the root `vercel.json`
+(`/api/*` → backend, everything else → frontend). Same-origin in
+production, so no CORS is needed there; `cors_origins` in
+`backend/app/core/config.py` only matters for local dev
+(`localhost:3000` → `localhost:8000`).
+
+Database is Supabase Postgres/PostGIS (Sydney): the pooled Supavisor
+connection (port 6543) is `DATABASE_URL` for the deployed API —
+`backend/app/core/database.py`'s `NullPool` is deliberate, matching
+this pooler — and the direct connection (port 5432) is
+`DATABASE_DIRECT_URL`, used only for Alembic migrations and `jobs/`.
+
+`jobs/` (the data worker — GeoPandas/H3/ingestion) is **not** part of
+the Vercel deployment; it stays a separate process pointed at the same
+Supabase instance. For now it runs manually from a local machine
+against `DATABASE_DIRECT_URL`/`DATABASE_URL` set to Supabase; scheduled
+automation (GitHub Actions cron → ingest → rebuild → atomic release
+swap) is tracked as its own backlog item, not required for a first
+deploy.
+
+Runbook for a first deploy:
+
+1. Create the Supabase project (Sydney region). Grab both connection
+   strings (direct `:5432`, pooled Supavisor `:6543`).
+2. `make db-migrate` locally with `DATABASE_DIRECT_URL` pointed at
+   Supabase's direct string, to bring it to head (0001–0013). If
+   migration `0001`'s `CREATE EXTENSION IF NOT EXISTS postgis` lacks
+   permission, enable PostGIS via Supabase's dashboard
+   (Database → Extensions) first.
+3. Seed one real data release against Supabase using the existing
+   `make` targets (`ingest` → `build-grid` → `build-features` →
+   `build-ped-baselines` → `build-ped-features` → `build-scores`), then
+   run `jobs/tests/test_golden_locations.py`'s DB-backed test against
+   it as the go/no-go gate.
+4. `vercel link` at the repo root so the project picks up `vercel.json`
+   and builds both services together.
+5. Set `DATABASE_URL` (Supabase pooled string) and
+   `NEXT_PUBLIC_GEOCODER_URL` as Vercel environment variables
+   (Production + Preview).
+6. Deploy (`vercel --prod` or push to `main`), then verify
+   `/api/v1/health`, `/api/v1/coverage`, a real score lookup, and the
+   map loading with no CORS errors.

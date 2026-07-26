@@ -122,6 +122,20 @@ Update this file after every meaningful implementation change.
   and high-zoom raw point layers; model work can now proceed one
   isolated feature at a time against the golden controls.
 
+- DEPLOYMENT SCAFFOLDING ADDED (2026-07-26), not yet live: root
+  `vercel.json` declares `frontend/` and `backend/` (entrypoint
+  `app.main:app`) as Vercel Services under one project/domain, with
+  `/api/*` routed to the backend and everything else to the frontend —
+  same-origin in production, so no CORS. `README.md`'s "Deployment"
+  section has the full runbook. This is config-only: no Supabase
+  project or Vercel project exists yet (needs the user's accounts/
+  credentials — Supabase project creation, running `make db-migrate`
+  + the feature/score build against it, `vercel link`, and setting
+  `DATABASE_URL`/`NEXT_PUBLIC_GEOCODER_URL` as Vercel env vars). Backlog
+  issue #9 tracks the remaining account-level steps; issue #6 (refresh
+  automation) is deliberately still deferred — the first deploy will
+  serve one manually-seeded data release.
+
 ## Completed
 
 - Context files established (2026-07-25): `project-overview.md`,
