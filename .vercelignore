@@ -1,0 +1,31 @@
+# Keep deploy uploads to source only — mirrors .gitignore's intent,
+# but .vercelignore needs its own copy since `vercel` doesn't reliably
+# treat .gitignore as authoritative for what to upload.
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+*.egg-info/
+
+# Node
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+npm-debug.log*
+
+# Raw data snapshots — large, local-only, never deployed.
+data/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Vercel's own state
+.vercel/
