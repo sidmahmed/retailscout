@@ -3,7 +3,7 @@
 Location-intelligence web app for the City of Melbourne: helps a
 prospective operator (café, retail shop, food truck, pop-up) compare
 candidate locations using council open data, with explainable versioned
-scores and explicit data confidence.
+scores and explicit data confidence. test
 
 > **Start here:** read `CLAUDE.md`, then the six files under
 > [`context/`](context/) **in order**. They are the product/architecture
