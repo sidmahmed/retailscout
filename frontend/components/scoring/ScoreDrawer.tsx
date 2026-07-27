@@ -316,10 +316,8 @@ function ScoreContent({ data }: { data: ScoreResponse }) {
       {/* 7 — source freshness / limitations */}
       <Section title="Sources">
         <p className="text-xs leading-relaxed text-[var(--text-muted)]">
-          Data release <span className="numeric">{data.data_release}</span> · score
-          version <span className="numeric">{data.score_version}</span>. Scores are
-          decision-support estimates relative to the rest of the municipality, not
-          predictions of business success.
+          Scores are decision-support estimates relative to the rest of the
+          municipality, not predictions of business success.
         </p>
         <ul className="mt-2 space-y-1.5 text-sm">
           {DATA_SOURCES.map((s) => (
@@ -366,15 +364,37 @@ function EmptyState({
   );
 }
 
+function SkeletonBlock({ className = "" }: { className?: string }) {
+  return <div className={`rounded bg-[var(--bg-surface-muted)] ${className}`} />;
+}
+
 function DrawerSkeleton() {
   return (
-    <div className="animate-pulse space-y-4 px-5 pb-6">
-      <div className="h-12 w-24 rounded-md bg-[var(--bg-surface-muted)]" />
-      <div className="h-4 w-3/4 rounded bg-[var(--bg-surface-muted)]" />
-      <div className="space-y-3 pt-4">
-        {[0, 1, 2, 3, 4].map((i) => (
-          <div key={i} className="h-8 rounded bg-[var(--bg-surface-muted)]" />
-        ))}
+    <div className="animate-pulse">
+      {/* mirrors 1 — score + confidence + interpretation */}
+      <div className="px-5 pb-4">
+        <div className="flex items-end justify-between">
+          <SkeletonBlock className="h-12 w-20" />
+          <SkeletonBlock className="h-6 w-20 rounded-full" />
+        </div>
+        <SkeletonBlock className="mt-3 h-4 w-full" />
+        <SkeletonBlock className="mt-1.5 h-4 w-2/3" />
+      </div>
+
+      {/* mirrors 3 — component score bars */}
+      <div className="border-t border-[var(--border-default)] px-5 py-4">
+        <SkeletonBlock className="mb-3 h-3 w-28" />
+        <div className="space-y-3.5">
+          {[0, 1, 2, 3, 4].map((i) => (
+            <SkeletonBlock key={i} className="h-8" />
+          ))}
+        </div>
+      </div>
+
+      {/* mirrors 5 — daypart chart */}
+      <div className="border-t border-[var(--border-default)] px-5 py-4">
+        <SkeletonBlock className="mb-3 h-3 w-40" />
+        <SkeletonBlock className="h-32 w-full" />
       </div>
     </div>
   );
