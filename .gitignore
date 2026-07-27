@@ -33,3 +33,5 @@ data/
 
 # Vercel
 .vercel/
+.vercel
+.env*
