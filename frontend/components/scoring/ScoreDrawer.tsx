@@ -15,6 +15,7 @@
 import {
   AlertTriangle,
   Check,
+  ExternalLink,
   Info,
   MapPinOff,
   Plus,
@@ -47,6 +48,32 @@ const EVIDENCE_LABELS: Record<string, string> = {
   pipeline_people_800m: "Development pipeline within 800 m (people)",
   pipeline_projects_800m: "Pipeline projects within 800 m",
 };
+
+// The datasets that actually feed the score components above. Static —
+// matches jobs/registry/sources.yaml's active sources, not a per-request
+// API field (ScoreResponse carries no dataset list, see §17.3 contract).
+const DATA_SOURCES: { title: string; url: string }[] = [
+  {
+    title: "Pedestrian Counting System (counts per hour)",
+    url: "https://data.melbourne.vic.gov.au/explore/dataset/pedestrian-counting-system-monthly-counts-per-hour/information/",
+  },
+  {
+    title: "Business establishments — location and industry classification",
+    url: "https://data.melbourne.vic.gov.au/explore/dataset/business-establishments-with-address-and-industry-classification/information/",
+  },
+  {
+    title: "Jobs per CLUE industry for blocks",
+    url: "https://data.melbourne.vic.gov.au/explore/dataset/employment-by-block-by-clue-industry/information/",
+  },
+  {
+    title: "Development Activity Monitor",
+    url: "https://data.melbourne.vic.gov.au/explore/dataset/development-activity-monitor/information/",
+  },
+  {
+    title: "PTV GTFS Schedule (Transport Victoria)",
+    url: "https://data.ptv.vic.gov.au/downloads/gtfs.zip",
+  },
+];
 
 function interpretation(data: ScoreResponse): string {
   const profile = PROFILE_LABELS[data.profile];
@@ -290,10 +317,28 @@ function ScoreContent({ data }: { data: ScoreResponse }) {
       <Section title="Sources">
         <p className="text-xs leading-relaxed text-[var(--text-muted)]">
           Data release <span className="numeric">{data.data_release}</span> · score
-          version <span className="numeric">{data.score_version}</span>. Data: City
-          of Melbourne Open Data. Scores are decision-support estimates relative to
-          the rest of the municipality, not predictions of business success.
+          version <span className="numeric">{data.score_version}</span>. Scores are
+          decision-support estimates relative to the rest of the municipality, not
+          predictions of business success.
         </p>
+        <ul className="mt-2 space-y-1.5 text-sm">
+          {DATA_SOURCES.map((s) => (
+            <li key={s.url} className="flex items-center gap-2">
+              <ExternalLink
+                className="h-3.5 w-3.5 shrink-0 text-[var(--text-muted)]"
+                strokeWidth={1.5}
+              />
+              <a
+                href={s.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[var(--accent-primary)] underline decoration-[var(--border-default)] underline-offset-2 hover:decoration-current"
+              >
+                {s.title}
+              </a>
+            </li>
+          ))}
+        </ul>
       </Section>
     </>
   );
