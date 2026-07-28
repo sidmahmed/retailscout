@@ -131,8 +131,12 @@ export function ScoreDrawer({
   return (
     <aside
       aria-label="Location score"
-      className="pointer-events-auto flex h-full w-full max-w-md flex-col overflow-hidden rounded-l-xl border-l border-[var(--border-default)] bg-[var(--bg-surface)] shadow-xl"
+      className="pointer-events-auto flex h-[60dvh] w-full flex-col overflow-hidden rounded-t-xl border-t border-[var(--border-default)] bg-[var(--bg-surface)] shadow-xl sm:h-full sm:max-w-md sm:rounded-t-none sm:rounded-l-xl sm:border-t-0 sm:border-l"
     >
+      <div aria-hidden className="flex shrink-0 justify-center pt-2 sm:hidden">
+        <div className="h-1 w-10 rounded-full bg-[var(--border-default)]" />
+      </div>
+
       <header className="flex items-center justify-between px-5 py-3.5">
         <div>
           <p className="text-sm font-semibold">{label}</p>

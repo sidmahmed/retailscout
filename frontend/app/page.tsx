@@ -3,9 +3,8 @@
 /**
  * Explore — the primary product surface (ui-context.md §Layout
  * Patterns): full-height MapLibre map, brand + profile controls docked
- * top, legend bottom-left, score drawer sliding in from the right on
- * location selection. Desktop-first; the mobile bottom-sheet variant is
- * tracked in context/frontend-handoff.md.
+ * top, legend bottom-left, score drawer opening on location selection —
+ * a bottom sheet below `sm`, sliding in from the right at `sm` and up.
  */
 
 import dynamic from "next/dynamic";
@@ -140,7 +139,7 @@ export default function ExplorePage() {
       <div
         className={`absolute bottom-6 left-4 z-10 space-y-2 ${
           comparisonOpen ? "sm:hidden" : ""
-        }`}
+        } ${activeLocation && !comparisonOpen ? "hidden sm:block" : ""}`}
       >
         <MapLegend />
         {!activeLocation && staged.length === 0 && (
@@ -155,9 +154,9 @@ export default function ExplorePage() {
         )}
       </div>
 
-      {/* Right-side score drawer */}
+      {/* Score drawer — bottom sheet on mobile, right-side panel from sm up */}
       {activeLocation && !comparisonOpen && (
-        <div className="pointer-events-none absolute inset-y-0 right-0 z-20 flex w-full max-w-md py-0 sm:py-4 sm:pr-0">
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex sm:inset-x-auto sm:inset-y-0 sm:right-0 sm:w-full sm:max-w-md sm:py-4 sm:pr-0">
           <ScoreDrawer
             inComparison={activeIsCompared}
             label={
