@@ -12,6 +12,7 @@ import { useRef, useState } from "react";
 
 import { ComparisonTray } from "@/components/locations/ComparisonTray";
 import { LocationSearch } from "@/components/locations/LocationSearch";
+import { MobileComparisonScreen } from "@/components/locations/MobileComparisonScreen";
 import { MapLegend } from "@/components/map/MapLegend";
 import { ProfileSwitcher } from "@/components/map/ProfileSwitcher";
 import { ScoreDrawer } from "@/components/scoring/ScoreDrawer";
@@ -138,7 +139,7 @@ export default function ExplorePage() {
       {/* Bottom-left legend + attribution-adjacent hint */}
       <div
         className={`absolute bottom-6 left-4 z-10 space-y-2 ${
-          comparisonOpen ? "sm:hidden" : ""
+          comparisonOpen ? "hidden" : ""
         } ${activeLocation && !comparisonOpen ? "hidden sm:block" : ""}`}
       >
         <MapLegend />
@@ -184,10 +185,24 @@ export default function ExplorePage() {
         </div>
       )}
 
+      {/* Mobile comparison — a separate full screen, not an overlay. */}
+      {comparisonOpen && staged.length >= 2 && (
+        <div className="sm:hidden">
+          <MobileComparisonScreen
+            locations={staged}
+            onActivate={openLocationDetails}
+            onClear={clearComparison}
+            onClose={() => setComparisonOpen(false)}
+            onRemove={removeComparisonLocation}
+            profile={profile}
+          />
+        </div>
+      )}
+
       {/* Comparison is an explicit workspace, never a side effect of map clicks. */}
       {!comparisonOpen && staged.length >= 2 && (
         <button
-          className="pointer-events-auto absolute bottom-6 left-1/2 z-10 hidden -translate-x-1/2 rounded-lg border border-[var(--accent-primary)] bg-[var(--bg-surface)] px-4 py-2 text-sm font-semibold text-[var(--accent-primary)] shadow-lg transition-colors hover:bg-[var(--bg-surface-muted)] sm:block"
+          className="pointer-events-auto absolute bottom-6 left-1/2 z-10 -translate-x-1/2 rounded-lg border border-[var(--accent-primary)] bg-[var(--bg-surface)] px-4 py-2 text-sm font-semibold text-[var(--accent-primary)] shadow-lg transition-colors hover:bg-[var(--bg-surface-muted)]"
           onClick={openComparison}
           type="button"
         >
